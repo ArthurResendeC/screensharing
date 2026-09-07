@@ -1,6 +1,7 @@
 import { serverMessageSchema, type ClientMessage, type ServerMessage } from './messages';
 export function connectSignaling(
   roomId: string,
+  clientId: string,
   onMessage: (message: ServerMessage) => void,
   onState: (state: string) => void,
 ) {
@@ -13,7 +14,7 @@ export function connectSignaling(
   };
   socket.onopen = () => {
     onState('connected');
-    send({ type: 'join-room', roomId });
+    send({ type: 'join-room', roomId, ...(clientId ? { clientId } : {}) });
   };
   socket.onmessage = (event: MessageEvent<unknown>) => {
     try {
@@ -26,7 +27,7 @@ export function connectSignaling(
     }
   };
   socket.onerror = () => onState('error');
-  socket.onclose = () => onState('disconnected');
+  socket.onclose = event => onState(event.code === 1012 || event.code === 1001 ? 'restarting' : 'disconnected');
   return {
     send,
     close: () => {

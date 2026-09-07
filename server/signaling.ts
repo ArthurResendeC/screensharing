@@ -139,6 +139,9 @@ export class SignalingHub {
         fail('Sala cheia: limite de cinco participantes.');
         return;
       }
+      // A reconnecting client reclaims its previous identity (unless already taken)
+      // so peers can resume their subscriptions after a redeploy drops every socket.
+      if (message.clientId && !room.members.has(message.clientId)) client.id = message.clientId;
       client.roomId = message.roomId;
       room.members.set(client.id, client);
       this.send(client, { type: 'joined', roomId: message.roomId, peerId: client.id, peers: this.participants(room) });
@@ -209,7 +212,8 @@ export class SignalingHub {
   }
 
   close() {
-    for (const client of this.clients) client.socket?.terminate();
+    // 1012 = service restart: tells clients this is a redeploy, not a lost connection.
+    for (const client of this.clients) client.socket?.close(1012, 'Server restarting');
     this.clients.clear();
     this.rooms.clear();
   }

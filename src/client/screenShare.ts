@@ -85,6 +85,15 @@ export class ScreenShareController {
   private selectedId: string | null = null;
   private alias = storedAlias();
   private capturing = false;
+  // Stable across reconnects: lets peers re-pair after a redeploy drops every socket at once.
+  private readonly clientId = crypto.randomUUID?.() ?? '';
+  private localStream: MediaStream | null = null;
+  private watchId: string | null = null;
+  private watchName: string | null = null;
+  private resumeWatch = false;
+  private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private reconnectAttempts = 0;
+  private disposed = false;
   private settingsTimer?: ReturnType<typeof setInterval>;
   private settingsOpen = false;
   private theme: Theme = loadTheme();
@@ -329,7 +338,10 @@ export class ScreenShareController {
       () => this.socketState,
     );
     this.copyButton.addEventListener('click', () => void this.copyInvite());
-    this.reconnectButton.addEventListener('click', () => this.startSession());
+    this.reconnectButton.addEventListener('click', () => {
+      this.reconnectAttempts = 0;
+      this.startSession();
+    });
     this.shareButton.addEventListener('click', () => void this.share());
     this.footerShareButton.addEventListener('click', () => void this.toggleShare());
     this.stopShareButton.addEventListener('click', () => {
@@ -553,22 +565,34 @@ export class ScreenShareController {
     this.endedAction.textContent = reason === 'remote' ? 'Compartilhar minha tela' : 'Compartilhar novamente';
   }
 
-  private stopSharing(session: Session, notify: boolean) {
+  // Tear down the outgoing publication for this session without touching the captured
+  // stream, so a reconnect can re-publish the same screen without a new prompt.
+  private detachPublishing(session: Session) {
     session.capture++;
-    session.stream?.getTracks().forEach(track => {
+    session.peers.closeDirection('send');
+    session.stream = null;
+    if (this.settingsTimer) clearInterval(this.settingsTimer);
+    this.settingsTimer = undefined;
+  }
+
+  private stopCapture() {
+    this.localStream?.getTracks().forEach(track => {
       track.onended = null;
       track.stop();
     });
-    session.stream = null;
-    session.peers.closeDirection('send');
-    if (this.settingsTimer) clearInterval(this.settingsTimer);
-    this.settingsTimer = undefined;
+    this.localStream = null;
+    this.localViewer.setStream(null);
+    this.sharingInfo.hidden = true;
+  }
+
+  private stopSharing(session: Session, notify: boolean) {
+    const wasActive = Boolean(session.stream) || this.capturing;
+    this.detachPublishing(session);
+    this.stopCapture();
     if (this.session === session) {
-      this.localViewer.setStream(null);
-      this.sharingInfo.hidden = true;
       this.capturing = false;
       this.renderControls();
-      if (notify) this.showEnded('me');
+      if (notify && wasActive) this.showEnded('me');
     }
     if (notify && session.joined) {
       try {
@@ -579,24 +603,63 @@ export class ScreenShareController {
     }
   }
 
+  // Wire a freshly captured (or reconnected) stream into the session and announce it.
+  private beginPublishing(session: Session, captured: MediaStream) {
+    const screenTrack = captured.getVideoTracks()[0];
+    if (!screenTrack) throw new Error('A captura não retornou uma track de vídeo.');
+    this.localStream = captured;
+    session.stream = captured;
+    screenTrack.onended = () => {
+      if (this.session) this.stopSharing(this.session, true);
+      else this.stopCapture();
+    };
+    this.localViewer.setStream(captured);
+    this.sharingInfo.hidden = false;
+    const updateSettings = () => {
+      const settings = screenTrack.getSettings();
+      this.captureInfo.textContent = `Captura real: ${settings.width ?? '?'} × ${settings.height ?? '?'} · ${settings.frameRate ?? 'indisponível'} FPS · ${captured.getAudioTracks().length ? 'Áudio incluído' : 'Sem áudio disponível nesta captura'}`;
+    };
+    updateSettings();
+    if (this.settingsTimer) clearInterval(this.settingsTimer);
+    this.settingsTimer = setInterval(updateSettings, 2000);
+    try {
+      session.channel?.send({ type: 'sharing-started' });
+    } catch {
+      /* O reingresso reenviará sharing-started. */
+    }
+    this.renderControls();
+  }
+
   private disposeSession(session: Session) {
     if (session.disposed) return;
     session.disposed = true;
-    this.stopSharing(session, false);
+    this.detachPublishing(session);
     session.peers.closeAllPeers();
     session.channel?.close();
     session.channel = null;
   }
 
+  private scheduleReconnect() {
+    if (this.disposed || this.reconnectTimer) return;
+    const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 15_000);
+    this.reconnectAttempts++;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+      this.startSession();
+    }, delay);
+  }
+
   private startSession() {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
     if (this.session) this.disposeSession(this.session);
     this.socketState = 'connecting';
     this.selfId = '';
     this.selectedId = null;
     this.capturing = false;
     this.remoteViewer.setStream(null);
-    this.localViewer.setStream(null);
-    this.setError('');
+    if (!this.localStream) this.localViewer.setStream(null);
+    this.setError(this.reconnectAttempts > 0 ? 'Reconectando à sala…' : '');
     this.showEnded(null);
     this.copyButton.innerHTML = `${PLUS_ICON_SMALL} Copiar convite`;
     let queue = Promise.resolve();
@@ -634,6 +697,7 @@ export class ScreenShareController {
     try {
       session.channel = connectSignaling(
         this.roomId,
+        this.clientId,
         message => {
           queue = queue.then(() => this.receive(session, message)).catch(reportError);
         },
@@ -643,6 +707,7 @@ export class ScreenShareController {
       reportError(error);
       this.socketState = 'error';
       this.renderControls();
+      if (!this.disposed) this.scheduleReconnect();
     }
   }
 
@@ -655,17 +720,23 @@ export class ScreenShareController {
       return;
     }
     session.joined = false;
-    this.stopSharing(session, false);
+    if (this.watchId) this.resumeWatch = true;
+    this.detachPublishing(session);
     session.peers.closeAllPeers();
     session.selection = null;
     this.selectedId = null;
     session.members = [];
     session.disposed = true;
     session.channel?.close();
-    this.setError('Signaling desconectado. Verifique o servidor e a conexão HTTPS/WSS.');
+    this.remoteViewer.setStream(null);
     this.renderMembers();
     this.renderControls();
     this.debug.refresh();
+    if (this.disposed) return;
+    this.setError(
+      state === 'restarting' ? 'Nova versão publicada. Reconectando à sala…' : 'Conexão perdida. Reconectando à sala…',
+    );
+    this.scheduleReconnect();
   }
 
   private updateMembers(session: Session, next: Participant[]) {
@@ -682,6 +753,8 @@ export class ScreenShareController {
       case 'joined':
         session.joined = true;
         this.selfId = message.peerId;
+        this.reconnectAttempts = 0;
+        this.setError('');
         this.updateMembers(session, message.peers);
         this.renderControls();
         if (this.alias) {
@@ -691,12 +764,17 @@ export class ScreenShareController {
             /* A reconexão reenviará o nome salvo. */
           }
         }
+        this.resumeAfterReconnect(session, message.peers);
         break;
       case 'room-state':
         this.updateMembers(session, message.peers);
+        this.maybeResumeWatch(message.peers);
         break;
       case 'watching':
-        if (message.sessionId === session.watchRequest && !message.peerId) {
+        if (message.sessionId !== session.watchRequest) break;
+        if (message.peerId) {
+          this.resumeWatch = false;
+        } else {
           session.peers.closeDirection('receive');
           session.selection = null;
           this.selectedId = null;
@@ -712,6 +790,9 @@ export class ScreenShareController {
         if (session.selection?.sessionId === message.sessionId) {
           session.selection = null;
           this.selectedId = null;
+          this.watchId = null;
+          this.watchName = null;
+          this.resumeWatch = false;
           this.renderMembers();
           this.renderControls();
           this.showEnded('remote', message.sessionId);
@@ -725,9 +806,43 @@ export class ScreenShareController {
     }
   }
 
-  private watch(peerId: string | null) {
+  // After a reconnect, keep publishing the same captured screen without a new prompt.
+  private resumeAfterReconnect(session: Session, peers: Participant[]) {
+    const track = this.localStream?.getVideoTracks()[0];
+    if (this.localStream && track?.readyState === 'live' && !session.stream) {
+      try {
+        this.beginPublishing(session, this.localStream);
+      } catch {
+        this.stopCapture();
+        this.renderControls();
+      }
+    } else if (this.localStream && track?.readyState !== 'live') {
+      this.stopCapture();
+      this.renderControls();
+    }
+    this.maybeResumeWatch(peers);
+  }
+
+  // Re-select the participant this client was watching before it reconnected, once
+  // they are back and sharing. Runs on every room update so it survives the publisher
+  // reconnecting after us; only armed by a disconnect, never by a live stream ending.
+  private maybeResumeWatch(peers: Participant[]) {
+    if (!this.resumeWatch || this.selectedId || (!this.watchId && !this.watchName)) return;
     const session = this.session;
     if (!session?.joined || session.disposed) return;
+    const available = peers.filter(peer => peer.sharing && peer.peerId !== this.selfId);
+    const byName = this.watchName ? available.filter(peer => displayName(peer) === this.watchName) : [];
+    const target =
+      available.find(peer => peer.peerId === this.watchId) ?? (byName.length === 1 ? byName[0] : undefined);
+    if (target) this.watch(target.peerId, true);
+  }
+
+  private watch(peerId: string | null, resuming = false) {
+    const session = this.session;
+    if (!session?.joined || session.disposed) return;
+    if (!resuming) this.resumeWatch = false;
+    this.watchId = peerId;
+    this.watchName = peerId ? this.nameOf(peerId) : null;
     const sessionId = crypto.randomUUID();
     session.watchRequest = sessionId;
     session.selection = peerId ? { peerId, sessionId } : null;
@@ -743,6 +858,8 @@ export class ScreenShareController {
       session.peers.closeDirection('receive');
       session.selection = null;
       this.selectedId = null;
+      this.watchId = null;
+      this.watchName = null;
       this.renderMembers();
       this.renderControls();
       this.setError(error instanceof Error ? error.message : 'Não foi possível assistir.');
@@ -770,20 +887,7 @@ export class ScreenShareController {
         captured.getTracks().forEach(track => track.stop());
         return;
       }
-      const screenTrack = captured.getVideoTracks()[0];
-      if (!screenTrack) throw new Error('A captura não retornou uma track de vídeo.');
-      session.stream = captured;
-      screenTrack.onended = () => this.stopSharing(session, true);
-      this.localViewer.setStream(captured);
-      this.sharingInfo.hidden = false;
-      const updateSettings = () => {
-        const settings = screenTrack.getSettings();
-        this.captureInfo.textContent = `Captura real: ${settings.width ?? '?'} × ${settings.height ?? '?'} · ${settings.frameRate ?? 'indisponível'} FPS · ${captured.getAudioTracks().length ? 'Áudio incluído' : 'Sem áudio disponível nesta captura'}`;
-      };
-      updateSettings();
-      this.settingsTimer = setInterval(updateSettings, 2000);
-      session.channel!.send({ type: 'sharing-started' });
-      this.renderControls();
+      this.beginPublishing(session, captured);
     } catch (error) {
       if (this.isCurrent(session) && session.capture === capture) {
         this.stopSharing(session, false);
@@ -807,8 +911,12 @@ export class ScreenShareController {
   }
 
   dispose() {
+    this.disposed = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
     if (this.settingsTimer) clearInterval(this.settingsTimer);
     if (this.session) this.disposeSession(this.session);
+    this.stopCapture();
     this.localViewer.dispose();
     this.remoteViewer.dispose();
     this.debug.dispose();

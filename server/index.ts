@@ -81,7 +81,8 @@ console.log(`WebRTC Screen Share listening on ${server.url}`);
 function shutdown() {
   clearInterval(heartbeat);
   hub.close();
-  void server.stop(true);
+  // Give the 1012 close frames a moment to flush before forcing the socket shut.
+  setTimeout(() => void server.stop(true), 300);
 }
 process.once('SIGINT', shutdown);
 process.once('SIGTERM', shutdown);

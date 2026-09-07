@@ -39,7 +39,7 @@ const participant = z
 export type Participant = z.infer<typeof participant>;
 
 export const clientMessageSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('join-room'), roomId: roomIdSchema }).strict(),
+  z.object({ type: z.literal('join-room'), roomId: roomIdSchema, clientId: id.optional() }).strict(),
   offer,
   answer,
   ice,

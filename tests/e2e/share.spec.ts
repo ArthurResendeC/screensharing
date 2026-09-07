@@ -260,7 +260,14 @@ test('participant aliases replace the default name for everyone and survive reco
   await bContext.close();
 });
 
-test('signaling disconnect closes both directions and capture; reconnect rejoins the existing room', async ({
+const dropSignaling = (page: Page) =>
+  page.evaluate(() =>
+    (window as unknown as TestWindow).testSockets
+      .filter(socket => new URL(socket.url).pathname === '/signaling')
+      .forEach(socket => socket.close()),
+  );
+
+test('a single lost signaling socket reconnects on its own and resumes sharing and watching', async ({
   page: a,
   context,
 }) => {
@@ -280,19 +287,52 @@ test('signaling disconnect closes both directions and capture; reconnect rejoins
   await Promise.all([choose(a, bName), choose(b, aName)]);
   await playing(a, 'blue', 1);
   await playing(b, 'red', 1);
-  await b.evaluate(() =>
-    (window as unknown as TestWindow).testSockets
-      .find(socket => new URL(socket.url).pathname === '/signaling')!
-      .close(),
-  );
-  await expect(b.getByRole('button', { name: 'Reconectar à sala' })).toBeVisible();
-  await cleared(a);
-  await cleared(b);
-  expect(await b.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('ended');
-  expect(await a.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');
-  await expect.poll(() => activeCounts(b)).toEqual({ sending: 0, receiving: 0, total: 0 });
-  await b.getByRole('button', { name: 'Reconectar à sala' }).click();
+
+  // B's socket drops. No button to press: B's session comes back on its own,
+  // keeps the same captured screen, and re-selects the stream B was watching.
+  await dropSignaling(b);
   await expect(participantCount(b)).toHaveText('2 / 5');
-  await choose(b, aName);
   await playing(b, 'red', 1);
+  expect(await b.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');
+  // A stayed connected and saw B leave; once B is back, A re-picks it in one click.
+  await choose(a, bName);
+  await playing(a, 'blue', 1);
+});
+
+test('a redeploy drops every socket at once and the room restores itself without interaction', async ({
+  page: a,
+  context,
+}) => {
+  await instrument(context);
+  const errors: string[] = [];
+  context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
+  a.on('pageerror', error => errors.push(error.message));
+  await capture(a, '#ff0000');
+  await a.goto('/');
+  await a.getByRole('button', { name: 'Criar sala' }).click();
+  await enterRoom(a);
+  const aName = await identity(a);
+  const b = await context.newPage();
+  await capture(b, '#0000ff');
+  await b.goto(a.url());
+  await enterRoom(b);
+  const bName = await identity(b);
+  await shareButton(a).click();
+  await shareButton(b).click();
+  await Promise.all([choose(a, bName), choose(b, aName)]);
+  await playing(a, 'blue', 1);
+  await playing(b, 'red', 1);
+
+  // Simulate a Railway deploy: the server drops, every client socket closes together.
+  await Promise.all([dropSignaling(a), dropSignaling(b)]);
+
+  await expect(participantCount(a)).toHaveText('2 / 5');
+  await expect(participantCount(b)).toHaveText('2 / 5');
+  // Both captures survived the reconnect, so nobody re-picks a screen.
+  expect(await a.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');
+  expect(await b.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');
+  // Both streams resume without touching the picker.
+  await playing(a, 'blue', 1);
+  await playing(b, 'red', 1);
+  expect(errors).toEqual([]);
 });
