@@ -379,7 +379,6 @@ export class ScreenShareController {
       this.startSession();
     });
     this.listToggleButton.addEventListener('click', () => this.watch(null));
-    this.reconnectButton.addEventListener('click', () => this.startSession());
     this.shareButton.addEventListener('click', () => void this.share());
     this.footerShareButton.addEventListener('click', () => void this.toggleShare());
     this.stopShareButton.addEventListener('click', () => {
@@ -409,6 +408,12 @@ export class ScreenShareController {
     this.themeDarkButton.addEventListener('click', () => this.setTheme('dark'));
     this.themeLightButton.addEventListener('click', () => this.setTheme('light'));
     this.joinErrorRetry.addEventListener('click', () => this.startSession());
+    // A backgrounded tab (common while you present your screen) has its reconnect
+    // timers throttled or frozen, so also retry the moment the tab is looked at again
+    // or the network returns.
+    document.addEventListener('visibilitychange', this.wakeReconnect);
+    window.addEventListener('online', this.wakeReconnect);
+    window.addEventListener('pageshow', this.wakeReconnect);
     this.renderSwatches();
     this.renderSettings();
     if (!this.nameGate.hidden) this.aliasInput.focus();
@@ -429,9 +434,7 @@ export class ScreenShareController {
   private showJoinError(message: string) {
     const isFull = /cheia/i.test(message);
     this.joinErrorTitle.textContent = isFull ? 'Sala cheia' : 'Não foi possível entrar';
-    this.joinErrorBody.textContent = isFull
-      ? `${message} Aguarde alguém sair ou peça um novo convite.`
-      : message;
+    this.joinErrorBody.textContent = isFull ? `${message} Aguarde alguém sair ou peça um novo convite.` : message;
     this.joinErrorModal.hidden = false;
   }
 
@@ -707,6 +710,16 @@ export class ScreenShareController {
     session.channel = null;
   }
 
+  // Reconnect right now if the socket is down — triggered when a throttled background
+  // tab becomes visible again, when the network comes back, or on bfcache restore.
+  private readonly wakeReconnect = () => {
+    if (this.disposed || navigator.onLine === false) return;
+    if (this.socketState === 'connected' || this.socketState === 'connecting') return;
+    if (document.visibilityState === 'hidden') return;
+    this.reconnectAttempts = 0;
+    this.startSession();
+  };
+
   private scheduleReconnect() {
     if (this.disposed || this.reconnectTimer) return;
     const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 15_000);
@@ -888,6 +901,8 @@ export class ScreenShareController {
         if (!session.joined) this.showJoinError(message.message);
         else this.setError(message.message);
         break;
+      case 'pong':
+        break;
       default:
         if (session.joined) await session.peers.receive(message);
     }
@@ -999,6 +1014,9 @@ export class ScreenShareController {
 
   dispose() {
     this.disposed = true;
+    document.removeEventListener('visibilitychange', this.wakeReconnect);
+    window.removeEventListener('online', this.wakeReconnect);
+    window.removeEventListener('pageshow', this.wakeReconnect);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
     if (this.settingsTimer) clearInterval(this.settingsTimer);

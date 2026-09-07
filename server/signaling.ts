@@ -125,6 +125,10 @@ export class SignalingHub {
       return;
     }
     const message = parsed.data;
+    if (message.type === 'ping') {
+      this.send(client, { type: 'pong' });
+      return;
+    }
     if (message.type === 'join-room') {
       if (client.roomId) {
         fail('Você já está em uma sala.');

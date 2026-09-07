@@ -47,6 +47,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('sharing-stopped') }).strict(),
   z.object({ type: z.literal('set-alias'), alias: aliasSchema }).strict(),
   z.object({ type: z.literal('watch'), targetPeerId: id.nullable(), sessionId: id }).strict(),
+  z.object({ type: z.literal('ping') }).strict(),
 ]);
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 export type RelayMessage = Extract<ClientMessage, { targetPeerId: string }>;
@@ -57,6 +58,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('subscriber-joined'), peerId: id, sessionId: id }),
   z.object({ type: z.literal('subscription-ended'), peerId: id, sessionId: id }),
   z.object({ type: z.literal('error'), message: z.string().max(300) }),
+  z.object({ type: z.literal('pong') }).strict(),
   offer.omit({ targetPeerId: true }).extend({ peerId: id }),
   answer.omit({ targetPeerId: true }).extend({ peerId: id }),
   ice.omit({ targetPeerId: true }).extend({ peerId: id }),

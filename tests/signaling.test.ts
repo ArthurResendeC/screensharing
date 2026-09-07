@@ -226,3 +226,40 @@ test('rate, payload and backpressure failures do not crash the hub', () => {
   expect(slowSocket.closed).toBeTrue();
   hub.close();
 });
+
+test('ping is answered with pong without needing a room', () => {
+  const hub = new SignalingHub();
+  const client = hub.createClient();
+  const socket = new FakeSocket();
+  hub.open(client, socket);
+  hub.message(client, JSON.stringify({ type: 'ping' }));
+  expect(socket.take('pong').type).toBe('pong');
+  hub.close();
+});
+
+test('a reconnecting client reclaims its previous peer id', () => {
+  const hub = new SignalingHub();
+  const roomId = crypto.randomUUID();
+  const clientId = crypto.randomUUID();
+  const join = () => {
+    const client = hub.createClient();
+    const socket = new FakeSocket();
+    hub.open(client, socket);
+    hub.message(client, JSON.stringify({ type: 'join-room', roomId, clientId }));
+    return { client, socket };
+  };
+  try {
+    const first = join();
+    const joined = first.socket.take('joined');
+    if (joined.type !== 'joined') throw new Error();
+    expect(joined.peerId).toBe(clientId);
+    hub.leave(first.client);
+
+    const second = join();
+    const rejoined = second.socket.take('joined');
+    if (rejoined.type !== 'joined') throw new Error();
+    expect(rejoined.peerId).toBe(clientId);
+  } finally {
+    hub.close();
+  }
+});

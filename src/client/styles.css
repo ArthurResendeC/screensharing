@@ -13,7 +13,7 @@
   --danger: #e0796b;
   --ok: #5cbf87;
 }
-:root[data-theme="light"] {
+:root[data-theme='light'] {
   --rail: #e3e6e9;
   --side: #f2f3f5;
   --main: #ffffff;
@@ -37,7 +37,7 @@ body {
   box-sizing: border-box;
 }
 body {
-  font-family: "Nunito Sans", system-ui, sans-serif;
+  font-family: 'Nunito Sans', system-ui, sans-serif;
   color: var(--ink);
   min-height: 100vh;
 }
@@ -57,7 +57,7 @@ a:hover {
 }
 code,
 .mono {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
 
 .error {
@@ -300,7 +300,7 @@ code,
   color: var(--muted);
 }
 .sidebar-section .section-title .count {
-  font-family: "JetBrains Mono", monospace;
+  font-family: 'JetBrains Mono', monospace;
   text-transform: none;
   letter-spacing: normal;
 }
@@ -337,7 +337,7 @@ ul.members {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: "JetBrains Mono", monospace;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   font-weight: 500;
   color: var(--accent-ink);
@@ -432,7 +432,7 @@ ul.members {
 }
 .debug-toggle .debug-content {
   padding: 0 14px 12px;
-  font-family: "JetBrains Mono", monospace;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 10.5px;
   line-height: 1.8;
   color: var(--muted);
@@ -544,7 +544,7 @@ ul.members {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: "JetBrains Mono", monospace;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   color: var(--accent-ink);
   background: var(--muted);
@@ -801,7 +801,7 @@ ul.members {
 }
 .action-bar .conn-label {
   margin-left: auto;
-  font-family: "JetBrains Mono", monospace;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   color: var(--muted);
 }

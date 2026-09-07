@@ -79,7 +79,9 @@ async function capture(page: Page, color: string, withAudio = true) {
 }
 async function enterRoom(page: Page, name?: string) {
   const gate = page.locator('[data-name-gate]');
-  // A stored alias means the gate never shows again; nothing to do.
+  // Wait for the controller to render before reading the gate: a stored alias keeps it
+  // hidden and there is nothing to do, otherwise fill the name and enter.
+  await gate.waitFor({ state: 'attached' });
   if (await gate.isHidden()) return;
   if (name !== undefined) await page.getByLabel('Seu nome na sala', { exact: true }).fill(name);
   await page.getByRole('button', { name: 'Entrar na sala', exact: true }).click();
@@ -300,6 +302,32 @@ test('a single lost signaling socket reconnects on its own and resumes sharing a
   // A stayed connected and saw B leave; once B is back, A re-picks it in one click.
   await choose(a, bName);
   await playing(a, 'blue', 1);
+});
+
+test('a pure publisher whose socket drops keeps publishing to its viewer after reconnecting', async ({
+  page: a,
+  context,
+}) => {
+  await instrument(context);
+  await capture(a, '#ff0000');
+  await a.goto('/');
+  await a.getByRole('button', { name: 'Criar sala' }).click();
+  await enterRoom(a);
+  const aName = await identity(a);
+  const b = await context.newPage();
+  await b.goto(a.url());
+  await enterRoom(b);
+  await shareButton(a).click();
+  await choose(b, aName);
+  await playing(b, 'red', 1);
+
+  // A only publishes — it is not watching anyone. Its socket drops; it must come
+  // back on its own and re-announce the same screen so B's view recovers.
+  await dropSignaling(a);
+  await expect(participantCount(a)).toHaveText('2 / 5');
+  expect(await a.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');
+  await choose(b, aName);
+  await playing(b, 'red', 1);
 });
 
 test('a redeploy drops every socket at once and the room restores itself without interaction', async ({
