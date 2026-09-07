@@ -1,6 +1,7 @@
 import { serverMessageSchema, type ClientMessage, type ServerMessage } from './messages';
 export function connectSignaling(roomId: string, onMessage: (message: ServerMessage) => void, onState: (state: string) => void) {
-  const url = process.env.NEXT_PUBLIC_SIGNALING_URL || `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.hostname.includes(':') ? `[${location.hostname}]` : location.hostname}:3001`;
+  const url = new URL('/signaling', location.href);
+  url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const socket = new WebSocket(url);
   const send = (message: ClientMessage) => {
     if (socket.readyState !== WebSocket.OPEN) throw new Error('Signaling desconectado.');

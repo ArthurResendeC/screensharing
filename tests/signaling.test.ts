@@ -1,139 +1,154 @@
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
-import { randomUUID } from 'node:crypto';
-import { WebSocket } from 'ws';
-import { createSignalingServer } from '../server/signaling';
+import { test, expect } from 'bun:test';
 import { serverMessageSchema, type ServerMessage } from '../src/lib/signaling/messages';
+import { SignalingHub, type Client, type SignalingSocket } from '../server/signaling';
 
-test('room subscriptions: one selection, reciprocal watching, isolation and independent lifecycle', async () => {
-  const server = createServer();
-  const wss = createSignalingServer(server, ['http://localhost:3000']);
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  assert(address && typeof address !== 'string');
-  const url = `ws://127.0.0.1:${address.port}`;
-  const sockets: WebSocket[] = [];
-  async function connect() {
-    const ws = new WebSocket(url, { origin: 'http://localhost:3000' });
-    sockets.push(ws);
-    const inbox: ServerMessage[] = [];
-    ws.on('message', data => inbox.push(serverMessageSchema.parse(JSON.parse(data.toString()))));
-    await new Promise<void>((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
-    return {
-      ws,
-      inbox,
-      send: (message: unknown) => ws.send(JSON.stringify(message)),
-      async take(type: ServerMessage['type']) {
-        const deadline = Date.now() + 2500;
-        while (Date.now() < deadline) {
-          const index = inbox.findIndex(message => message.type === type);
-          if (index !== -1) return inbox.splice(index, 1)[0];
-          await new Promise(resolve => setTimeout(resolve, 10));
-        }
-        throw new Error(`Timeout waiting for ${type}`);
-      },
-    };
+class FakeSocket implements SignalingSocket {
+  inbox: ServerMessage[] = [];
+  closed = false;
+  buffered = 0;
+  send(message: string) {
+    this.inbox.push(serverMessageSchema.parse(JSON.parse(message)));
+    return message.length;
   }
+  close() { this.closed = true; }
+  terminate() { this.closed = true; }
+  ping() { return 1; }
+  getBufferedAmount() { return this.buffered; }
+  take(type: ServerMessage['type']) {
+    const index = this.inbox.findIndex(message => message.type === type);
+    if (index < 0) throw new Error(`Mensagem ${type} não encontrada`);
+    return this.inbox.splice(index, 1)[0];
+  }
+}
+
+type Peer = { client: Client; socket: FakeSocket; send(message: unknown): void; take(type: ServerMessage['type']): ServerMessage };
+
+test('room subscriptions: one selection, reciprocal watching, isolation and independent lifecycle', () => {
+  const hub = new SignalingHub();
+  const connect = (): Peer => {
+    const client = hub.createClient();
+    const socket = new FakeSocket();
+    hub.open(client, socket);
+    return {
+      client,
+      socket,
+      send: message => hub.message(client, JSON.stringify(message)),
+      take: type => socket.take(type),
+    };
+  };
+  const roomId = crypto.randomUUID();
+  const join = (room = roomId) => {
+    const peer = connect();
+    peer.send({ type: 'join-room', roomId: room });
+    const message = peer.take('joined');
+    if (message.type !== 'joined') throw new Error();
+    return { ...peer, id: message.peerId };
+  };
   try {
-    const rejected = new WebSocket(url, { origin: 'https://untrusted.example' });
-    await new Promise<void>(resolve => rejected.once('error', () => resolve()));
-    const roomId = randomUUID();
-    async function join(room = roomId) {
-      const peer = await connect();
-      peer.send({ type: 'join-room', roomId: room });
-      const message = await peer.take('joined');
-      if (message.type !== 'joined') throw new Error();
-      return { ...peer, id: message.peerId };
-    }
-    const a = await join();
-    const b = await join();
-    const c = await join();
-    const d = await join();
-    const e = await join();
-    const extra = await connect();
+    const a = join();
+    const b = join();
+    const c = join();
+    const d = join();
+    const e = join();
+    const extra = connect();
     extra.send({ type: 'join-room', roomId });
-    await extra.take('error');
-    a.ws.send('{invalid');
-    await a.take('error');
+    expect(extra.take('error').type).toBe('error');
+    a.send('{invalid');
+    expect(a.take('error').type).toBe('error');
     a.send({ type: 'join-room', roomId });
-    await a.take('error');
+    expect(a.take('error').type).toBe('error');
     a.send({ type: 'sharing-started' });
     b.send({ type: 'sharing-started' });
-    // The state snapshot is also available to late arrivals.
-    const outsider = await join(randomUUID());
-    const rejectedSession = randomUUID();
+
+    const outsider = join(crypto.randomUUID());
+    const rejectedSession = crypto.randomUUID();
     outsider.send({ type: 'watch', targetPeerId: a.id, sessionId: rejectedSession });
-    assert.deepEqual(await outsider.take('watching'), { type: 'watching', peerId: null, sessionId: rejectedSession });
-    await outsider.take('error');
-    a.send({ type: 'watch', targetPeerId: a.id, sessionId: randomUUID() });
-    await a.take('watching');
-    await a.take('error');
-    c.send({ type: 'watch', targetPeerId: d.id, sessionId: randomUUID() });
-    await c.take('watching');
-    await c.take('error');
-    async function watch(viewer: typeof a, publisher: typeof a) {
-      const sessionId = randomUUID();
+    expect(outsider.take('watching')).toEqual({ type: 'watching', peerId: null, sessionId: rejectedSession });
+    expect(outsider.take('error').type).toBe('error');
+    a.send({ type: 'watch', targetPeerId: a.id, sessionId: crypto.randomUUID() });
+    a.take('watching');
+    a.take('error');
+    c.send({ type: 'watch', targetPeerId: d.id, sessionId: crypto.randomUUID() });
+    c.take('watching');
+    c.take('error');
+
+    const watch = (viewer: typeof a, publisher: typeof a) => {
+      const sessionId = crypto.randomUUID();
       viewer.send({ type: 'watch', targetPeerId: publisher.id, sessionId });
-      assert.deepEqual(await viewer.take('watching'), { type: 'watching', peerId: publisher.id, sessionId });
-      assert.deepEqual(await publisher.take('subscriber-joined'), { type: 'subscriber-joined', peerId: viewer.id, sessionId });
+      expect(viewer.take('watching')).toEqual({ type: 'watching', peerId: publisher.id, sessionId });
+      expect(publisher.take('subscriber-joined')).toEqual({ type: 'subscriber-joined', peerId: viewer.id, sessionId });
       return sessionId;
-    }
-    const ca = await watch(c, a);
-    const offer = { type: 'offer', targetPeerId: c.id, sessionId: ca, sdp: { type: 'offer', sdp: 'v=0\r\n' } };
+    };
+    const ca = watch(c, a);
+    const offer = { type: 'offer' as const, targetPeerId: c.id, sessionId: ca, sdp: { type: 'offer' as const, sdp: 'v=0\r\n' } };
     a.send(offer);
-    assert.deepEqual(await c.take('offer'), { type: 'offer', peerId: a.id, sessionId: ca, sdp: offer.sdp });
+    expect(c.take('offer')).toEqual({ type: 'offer', peerId: a.id, sessionId: ca, sdp: offer.sdp });
     c.send({ type: 'answer', targetPeerId: a.id, sessionId: ca, sdp: { type: 'answer', sdp: 'v=0\r\n' } });
-    await a.take('answer');
+    expect(a.take('answer').type).toBe('answer');
     c.send({ type: 'ice-candidate', targetPeerId: a.id, sessionId: ca, candidate: { candidate: '', sdpMid: '0' } });
-    await a.take('ice-candidate');
-    // A and B may watch each other without overwriting either subscription.
-    const ab = await watch(a, b);
-    const ba = await watch(b, a);
-    const cb = await watch(c, b);
-    assert.deepEqual(await a.take('subscription-ended'), { type: 'subscription-ended', peerId: c.id, sessionId: ca });
-    assert.deepEqual(await c.take('subscription-ended'), { type: 'subscription-ended', peerId: a.id, sessionId: ca });
-    a.send(offer); // Revoked session must no longer be relayed.
+    expect(a.take('ice-candidate').type).toBe('ice-candidate');
+
+    const ab = watch(a, b);
+    const ba = watch(b, a);
+    const cb = watch(c, b);
+    expect(a.take('subscription-ended')).toEqual({ type: 'subscription-ended', peerId: c.id, sessionId: ca });
+    expect(c.take('subscription-ended')).toEqual({ type: 'subscription-ended', peerId: a.id, sessionId: ca });
+    a.send(offer);
     b.send({ ...offer, sessionId: cb });
-    const nextOffer = await c.take('offer');
-    assert(nextOffer.type === 'offer' && nextOffer.peerId === b.id && nextOffer.sessionId === cb);
-    // Wrong role, wrong session and unrequested offers are silently discarded.
+    const nextOffer = c.take('offer');
+    expect(nextOffer.type === 'offer' && nextOffer.peerId === b.id && nextOffer.sessionId === cb).toBeTrue();
+
     c.send({ ...offer, targetPeerId: b.id, sessionId: cb });
-    d.send({ ...offer, targetPeerId: c.id, sessionId: randomUUID() });
+    d.send({ ...offer, targetPeerId: c.id, sessionId: crypto.randomUUID() });
     b.send({ type: 'sharing-stopped' });
-    assert.deepEqual(await a.take('subscription-ended'), { type: 'subscription-ended', peerId: b.id, sessionId: ab });
-    const endedByB = await c.take('subscription-ended');
-    assert(endedByB.type === 'subscription-ended' && endedByB.sessionId === cb);
-    assert.equal(b.inbox.filter(message => message.type === 'offer').length, 0);
-    assert.equal(c.inbox.filter(message => message.type === 'offer').length, 0);
+    expect(a.take('subscription-ended')).toEqual({ type: 'subscription-ended', peerId: b.id, sessionId: ab });
+    expect(c.take('subscription-ended').type).toBe('subscription-ended');
+    expect(b.socket.inbox.filter(message => message.type === 'offer')).toHaveLength(0);
+    expect(c.socket.inbox.filter(message => message.type === 'offer')).toHaveLength(0);
     for (const expected of [ab, cb]) {
-      const ended = await b.take('subscription-ended');
-      assert(ended.type === 'subscription-ended' && ended.sessionId === expected);
+      const ended = b.take('subscription-ended');
+      expect(ended.type === 'subscription-ended' && ended.sessionId === expected).toBeTrue();
     }
-    // Stopping B's publication leaves B watching A.
+
     a.send({ ...offer, targetPeerId: b.id, sessionId: ba });
-    await b.take('offer');
-    a.ws.close(); // Original creator leaving does not close the room.
-    const endedByA = await b.take('subscription-ended');
-    assert(endedByA.type === 'subscription-ended' && endedByA.sessionId === ba);
+    b.take('offer');
+    hub.leave(a.client);
+    const endedByA = b.take('subscription-ended');
+    expect(endedByA.type === 'subscription-ended' && endedByA.sessionId === ba).toBeTrue();
     b.send({ type: 'sharing-started' });
-    await watch(c, b);
+    watch(c, b);
     extra.send({ type: 'join-room', roomId });
-    const snapshot = await extra.take('joined');
-    assert(snapshot.type === 'joined' && snapshot.peers.length === 5 && snapshot.peers.some(peer => peer.peerId === b.id && peer.sharing));
-    const stopId = randomUUID();
+    const snapshot = extra.take('joined');
+    expect(snapshot.type === 'joined' && snapshot.peers.length === 5 && snapshot.peers.some(peer => peer.peerId === b.id && peer.sharing)).toBeTrue();
+
+    const stopId = crypto.randomUUID();
     c.send({ type: 'watch', targetPeerId: null, sessionId: stopId });
-    await c.take('subscription-ended');
-    await c.take('watching');
-    // Duplicate session IDs cannot overwrite another viewer's connection.
-    const db = await watch(d, b);
+    c.take('subscription-ended');
+    c.take('watching');
+    const db = watch(d, b);
     e.send({ type: 'watch', targetPeerId: b.id, sessionId: db });
-    await e.take('watching');
-    await e.take('error');
+    e.take('watching');
+    e.take('error');
   } finally {
-    for (const socket of sockets) socket.terminate();
-    for (const socket of wss.clients) socket.terminate();
-    await new Promise<void>(resolve => wss.close(() => resolve()));
-    await new Promise<void>(resolve => server.close(() => resolve()));
+    hub.close();
   }
+});
+
+test('rate, payload and backpressure failures do not crash the hub', () => {
+  const hub = new SignalingHub();
+  const client = hub.createClient();
+  const socket = new FakeSocket();
+  hub.open(client, socket);
+  hub.message(client, new Uint8Array([1]));
+  expect(socket.take('error').type).toBe('error');
+  for (let index = 0; index < 151; index++) hub.message(client, '{}');
+  expect(socket.closed).toBeTrue();
+
+  const slow = hub.createClient();
+  const slowSocket = new FakeSocket();
+  slowSocket.buffered = 2 * 1024 * 1024;
+  hub.open(slow, slowSocket);
+  hub.message(slow, '{}');
+  expect(slowSocket.closed).toBeTrue();
+  hub.close();
 });

@@ -12,41 +12,20 @@ export default defineRailway(ctx => {
   // Keep platform defaults ON_FAILURE and Serverless off. CLI 5.44 serializes
   // those defaults as null, so spelling them out causes a perpetual false diff.
   const web = service('web', {
-    build: { builder: 'RAILPACK', buildCommand: 'pnpm build' },
-    start: 'pnpm start',
-    healthcheck: '/',
+    build: { builder: 'RAILPACK', buildCommand: 'bun run build' },
+    start: 'bun run start',
+    healthcheck: '/health',
     healthcheckTimeout: 60,
     replicas: 1,
     deploy: {
       restartPolicyMaxRetries: 3,
     },
     env: {
-      NODE_ENV: 'production',
       PORT: '3000',
-      NEXT_TELEMETRY_DISABLED: '1',
-      NEXT_PUBLIC_SIGNALING_URL: 'wss://${{signaling.RAILWAY_PUBLIC_DOMAIN}}',
-      NEXT_PUBLIC_MAX_VIDEO_BITRATE: '15000000',
-    },
-  });
-
-  const signaling = service('signaling', {
-    build: { builder: 'RAILPACK', buildCommand: 'pnpm build:signaling' },
-    start: 'pnpm start:signaling',
-    healthcheck: '/health',
-    healthcheckTimeout: 30,
-    // Rooms/subscriptions live in memory; replicas cannot share that state.
-    replicas: 1,
-    deploy: {
-      overlapSeconds: 0,
-      drainingSeconds: 0,
-      restartPolicyMaxRetries: 3,
-    },
-    env: {
       NODE_ENV: 'production',
-      PORT: '3001',
-      ALLOWED_ORIGINS: 'https://${{web.RAILWAY_PUBLIC_DOMAIN}}',
+      MAX_VIDEO_BITRATE: '15000000',
     },
   });
 
-  return project('screensharing', { resources: [web, signaling] });
+  return project('screensharing', { resources: [web] });
 });

@@ -2,12 +2,20 @@
 export const rtcConfiguration: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    ...(process.env.NEXT_PUBLIC_TURN_URL ? [{
-      urls: process.env.NEXT_PUBLIC_TURN_URL,
-      username: process.env.NEXT_PUBLIC_TURN_USERNAME,
-      credential: process.env.NEXT_PUBLIC_TURN_CREDENTIAL,
-    }] : []),
   ],
 };
-const configuredBitrate = Number(process.env.NEXT_PUBLIC_MAX_VIDEO_BITRATE ?? 15_000_000);
-export const MAX_VIDEO_BITRATE = Number.isFinite(configuredBitrate) && configuredBitrate > 0 ? configuredBitrate : undefined;
+export let MAX_VIDEO_BITRATE: number | undefined = 15_000_000;
+
+export type PublicRtcConfiguration = {
+  maxVideoBitrate?: number;
+  turn?: RTCIceServer | null;
+};
+
+export function configureRtc(config: PublicRtcConfiguration) {
+  const bitrate = Number(config.maxVideoBitrate);
+  MAX_VIDEO_BITRATE = Number.isFinite(bitrate) && bitrate > 0 ? bitrate : undefined;
+  rtcConfiguration.iceServers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    ...(config.turn?.urls ? [config.turn] : []),
+  ];
+}

@@ -11,8 +11,9 @@ export default defineConfig({
       args: ['--autoplay-policy=no-user-gesture-required'],
     },
   },
-  webServer: [
-    { command: 'pnpm dev', url: 'http://localhost:3000', reuseExistingServer: !process.env.CI },
-    { command: 'pnpm signaling', url: 'http://localhost:3001', reuseExistingServer: !process.env.CI },
-  ],
+  webServer: {
+    command: 'bun run dev',
+    url: 'http://localhost:3000/health',
+    reuseExistingServer: !process.env.CI,
+  },
 });
