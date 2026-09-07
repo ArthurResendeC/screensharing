@@ -1,5 +1,6 @@
 import type { ClientMessage, PeerSignal } from '../signaling/messages';
 import { MAX_VIDEO_BITRATE, rtcConfiguration } from './rtcConfiguration';
+import { tuneVideoBitrate } from './sdp';
 
 type Entry = {
   peerId: string;
@@ -67,6 +68,7 @@ export class Peers {
       for (const transceiver of entry.pc.getTransceivers()) transceiver.direction = 'sendonly';
       const offer = await entry.pc.createOffer();
       if (!this.current(entry)) return;
+      if (offer.sdp) offer.sdp = tuneVideoBitrate(offer.sdp);
       await entry.pc.setLocalDescription(offer);
       if (!this.current(entry)) return;
       this.send({
@@ -118,15 +120,17 @@ export class Peers {
         return;
       }
       if (entry.direction !== 'send' || pc.signalingState !== 'have-local-offer') return;
-      await pc.setRemoteDescription(message.sdp);
+      await pc.setRemoteDescription({ type: 'answer', sdp: tuneVideoBitrate(message.sdp.sdp) });
       if (!this.current(entry)) return;
       await this.flush(entry);
       for (const sender of pc.getSenders()) {
         if (!this.current(entry)) return;
-        if (sender.track?.kind !== 'video' || !MAX_VIDEO_BITRATE) continue;
+        if (sender.track?.kind !== 'video') continue;
         const parameters = sender.getParameters();
         if (!parameters.encodings?.length) continue;
-        for (const encoding of parameters.encodings) encoding.maxBitrate = MAX_VIDEO_BITRATE;
+        // Screen content: hold resolution, drop framerate under pressure.
+        parameters.degradationPreference = 'maintain-resolution';
+        if (MAX_VIDEO_BITRATE) for (const encoding of parameters.encodings) encoding.maxBitrate = MAX_VIDEO_BITRATE;
         try {
           await sender.setParameters(parameters);
         } catch {

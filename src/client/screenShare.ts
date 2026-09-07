@@ -717,6 +717,8 @@ export class ScreenShareController {
   private beginPublishing(session: Session, captured: MediaStream) {
     const screenTrack = captured.getVideoTracks()[0];
     if (!screenTrack) throw new Error('A captura não retornou uma track de vídeo.');
+    // Favour a steady framerate and bitrate over sharpening a frozen frame.
+    screenTrack.contentHint = 'motion';
     this.localStream = captured;
     session.stream = captured;
     screenTrack.onended = () => {

@@ -6,6 +6,8 @@ import { applyTheme, loadTheme } from './theme';
 
 const publicConfigSchema = z.object({
   maxVideoBitrate: z.number(),
+  minVideoBitrate: z.number().optional(),
+  startVideoBitrate: z.number().optional(),
   turn: z
     .object({
       urls: z.union([z.string(), z.array(z.string())]),
@@ -108,7 +110,7 @@ async function main() {
     if (!response.ok) throw new Error();
     configureRtc(publicConfigSchema.parse(await response.json()));
   } catch {
-    configureRtc({ maxVideoBitrate: 15_000_000, turn: null });
+    configureRtc({ maxVideoBitrate: 15_000_000, minVideoBitrate: 2_500_000, startVideoBitrate: 8_000_000, turn: null });
   }
   const roomId = roomFromPath();
   if (roomId === null) {

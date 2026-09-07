@@ -68,7 +68,9 @@ O servidor só encaminha offer, answer e ICE quando remetente, destino, sala, di
 
 ## Bitrate, codecs e custo
 
-`src/lib/webrtc/rtcConfiguration.ts` centraliza ICE e o teto `MAX_VIDEO_BITRATE`, cujo padrão é 15 Mbps **por espectador**. Após a answer, o transmissor altera `encodings[].maxBitrate` a partir de `RTCRtpSender.getParameters()` e chama `setParameters()`. O valor é uma solicitação: navegador, congestionamento, CPU e captura podem entregar menos.
+`src/lib/webrtc/rtcConfiguration.ts` centraliza ICE e o teto `MAX_VIDEO_BITRATE`, cujo padrão é 15 Mbps **por espectador**. Após a answer, o transmissor altera `encodings[].maxBitrate` a partir de `RTCRtpSender.getParameters()`, define `degradationPreference` como `maintain-resolution` e chama `setParameters()`. O valor é uma solicitação: navegador, congestionamento, CPU e captura podem entregar menos.
+
+`MIN_VIDEO_BITRATE` (2,5 Mbps) e `START_VIDEO_BITRATE` (8 Mbps) são injetados na SDP de vídeo como `x-google-min-bitrate` / `x-google-start-bitrate` por `src/lib/webrtc/sdp.ts`, evitando que o bitrate desabe numa tela estática e suba lentamente quando o conteúdo volta a se mover. A track de captura usa `contentHint = 'motion'`. Só o Chrome/Edge respeitam as dicas `x-google-*`; `0` desativa cada uma.
 
 A negociação padrão escolhe o codec. **Debug WebRTC** exibe capacidades locais, estados de conexão e estatísticas de RTP a cada dois segundos somente enquanto a seção está aberta.
 

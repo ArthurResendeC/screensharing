@@ -38,6 +38,8 @@ const server = Bun.serve<Client>({
       Response.json(
         {
           maxVideoBitrate: Number(process.env.MAX_VIDEO_BITRATE ?? 15_000_000),
+          minVideoBitrate: Number(process.env.MIN_VIDEO_BITRATE ?? 2_500_000),
+          startVideoBitrate: Number(process.env.START_VIDEO_BITRATE ?? 8_000_000),
           turn: process.env.TURN_URL
             ? {
                 urls: process.env.TURN_URL,
