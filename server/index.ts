@@ -34,14 +34,20 @@ const server = Bun.serve<Client>({
     '/health': new Response('OK\n', {
       headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
     }),
-    '/config.json': () => Response.json({
-      maxVideoBitrate: Number(process.env.MAX_VIDEO_BITRATE ?? 15_000_000),
-      turn: process.env.TURN_URL ? {
-        urls: process.env.TURN_URL,
-        username: process.env.TURN_USERNAME,
-        credential: process.env.TURN_CREDENTIAL,
-      } : null,
-    }, { headers: { 'cache-control': 'no-store' } }),
+    '/config.json': () =>
+      Response.json(
+        {
+          maxVideoBitrate: Number(process.env.MAX_VIDEO_BITRATE ?? 15_000_000),
+          turn: process.env.TURN_URL
+            ? {
+                urls: process.env.TURN_URL,
+                username: process.env.TURN_USERNAME,
+                credential: process.env.TURN_CREDENTIAL,
+              }
+            : null,
+        },
+        { headers: { 'cache-control': 'no-store' } },
+      ),
   },
   fetch(request, bunServer) {
     const url = new URL(request.url);

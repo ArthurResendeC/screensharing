@@ -1,5 +1,5 @@
 import { connectSignaling } from '../lib/signaling/client';
-import type { Participant, ServerMessage } from '../lib/signaling/messages';
+import { ALIAS_MAX_LENGTH, type Participant, type ServerMessage } from '../lib/signaling/messages';
 import { Peers } from '../lib/webrtc/peers';
 import { ConnectionDebug } from './connectionDebug';
 import { applyTheme, loadTheme, type Theme } from './theme';
@@ -27,22 +27,50 @@ const ACCENTS = [
 
 const AVATAR_COLORS = ['#8fb98a', '#b98a9a', '#c8b48a', '#7b8ce8', '#c08a5a'];
 
-const CAMERA_ICON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="4" width="19" height="13" rx="2"></rect><line x1="8" y1="20.5" x2="16" y2="20.5"></line><line x1="12" y1="17" x2="12" y2="20.5"></line></svg>';
-const CAMERA_ICON_SMALL = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="4" width="19" height="13" rx="2"></rect><line x1="8" y1="20.5" x2="16" y2="20.5"></line></svg>';
-const CAMERA_ICON_TOPBAR = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="icon"><rect x="2.5" y="4" width="19" height="13" rx="2"></rect><line x1="8" y1="20.5" x2="16" y2="20.5"></line></svg>';
-const PLUS_ICON_SMALL = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>';
-const ARROW_LEFT_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>';
-const PLAY_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="7,4 20,12 7,20"></polygon></svg>';
-const GEAR_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.2 5.2l2.1 2.1M16.7 16.7l2.1 2.1M18.8 5.2l-2.1 2.1M7.3 16.7l-2.1 2.1"></path></svg>';
-const LEAVE_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"></path><polyline points="9 8 4.5 12 9 16"></polyline><line x1="4.5" y1="12" x2="14.5" y2="12"></line></svg>';
-const STOP_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>';
-const EMPTY_ICON = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2.5" y="4" width="19" height="13" rx="2"></rect><line x1="8" y1="20.5" x2="16" y2="20.5"></line><line x1="12" y1="17" x2="12" y2="20.5"></line></svg>';
-const ENDED_ICON = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2.5" y="4" width="19" height="13" rx="2"></rect><line x1="8" y1="20.5" x2="16" y2="20.5"></line><line x1="4" y1="3" x2="20" y2="18"></line></svg>';
-const CHECK_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+const CAMERA_ICON =
+  '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="4" width="19" height="13" rx="2"></rect><line x1="8" y1="20.5" x2="16" y2="20.5"></line><line x1="12" y1="17" x2="12" y2="20.5"></line></svg>';
+const CAMERA_ICON_SMALL =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="4" width="19" height="13" rx="2"></rect><line x1="8" y1="20.5" x2="16" y2="20.5"></line></svg>';
+const CAMERA_ICON_TOPBAR =
+  '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="icon"><rect x="2.5" y="4" width="19" height="13" rx="2"></rect><line x1="8" y1="20.5" x2="16" y2="20.5"></line></svg>';
+const PLUS_ICON_SMALL =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>';
+const ARROW_LEFT_ICON =
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>';
+const PLAY_ICON =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="7,4 20,12 7,20"></polygon></svg>';
+const SUN_ICON =
+  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"></circle><path d="M12 2.5v2.5M12 19v2.5M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2.5 12H5M19 12h2.5M4.2 19.8 6 18M18 6l1.8-1.8"></path></svg>';
+const LEAVE_ICON =
+  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"></path><polyline points="9 8 4.5 12 9 16"></polyline><line x1="4.5" y1="12" x2="14.5" y2="12"></line></svg>';
+const STOP_ICON =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>';
+const EMPTY_ICON =
+  '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2.5" y="4" width="19" height="13" rx="2"></rect><line x1="8" y1="20.5" x2="16" y2="20.5"></line><line x1="12" y1="17" x2="12" y2="20.5"></line></svg>';
+const ENDED_ICON =
+  '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2.5" y="4" width="19" height="13" rx="2"></rect><line x1="8" y1="20.5" x2="16" y2="20.5"></line><line x1="4" y1="3" x2="20" y2="18"></line></svg>';
+const CHECK_ICON =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 
 const participantName = (id: string) => `Participante ${id.slice(0, 8)}`;
+const displayName = (participant: Participant) => participant.alias || participantName(participant.peerId);
+const escapeHtml = (value: string) =>
+  value.replace(/[&<>"]/g, char => (char === '&' ? '&amp;' : char === '<' ? '&lt;' : char === '>' ? '&gt;' : '&quot;'));
 const initialsOf = (id: string) => id.slice(0, 2);
-const avatarColor = (id: string) => AVATAR_COLORS[[...id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % AVATAR_COLORS.length];
+const avatarColor = (id: string) => {
+  let sum = 0;
+  for (let index = 0; index < id.length; index++) sum += id.charCodeAt(index);
+  return AVATAR_COLORS[sum % AVATAR_COLORS.length];
+};
+
+const ALIAS_STORAGE_KEY = 'screen-share:alias';
+function storedAlias() {
+  try {
+    return (localStorage.getItem(ALIAS_STORAGE_KEY) ?? '').trim().slice(0, ALIAS_MAX_LENGTH);
+  } catch {
+    return '';
+  }
+}
 
 function required<T extends Element>(root: ParentNode, selector: string): T {
   const element = root.querySelector<T>(selector);
@@ -55,6 +83,7 @@ export class ScreenShareController {
   private socketState = 'connecting';
   private selfId = '';
   private selectedId: string | null = null;
+  private alias = storedAlias();
   private capturing = false;
   private settingsTimer?: ReturnType<typeof setInterval>;
   private settingsOpen = false;
@@ -68,6 +97,12 @@ export class ScreenShareController {
   private readonly participants: HTMLElement;
   private readonly identity: HTMLElement;
   private readonly identityId: HTMLElement;
+  private readonly identityName: HTMLElement;
+  private readonly nameGate: HTMLElement;
+  private readonly aliasForm: HTMLFormElement;
+  private readonly aliasInput: HTMLInputElement;
+  private readonly renameForm: HTMLFormElement;
+  private readonly renameInput: HTMLInputElement;
   private readonly error: HTMLElement;
   private readonly reconnectButton: HTMLButtonElement;
   private readonly shareButton: HTMLButtonElement;
@@ -94,7 +129,10 @@ export class ScreenShareController {
   private readonly endedAction: HTMLButtonElement;
   private readonly connection: HTMLElement;
 
-  constructor(private readonly root: HTMLElement, private readonly roomId: string) {
+  constructor(
+    private readonly root: HTMLElement,
+    private readonly roomId: string,
+  ) {
     root.innerHTML = `
       <div class="shell">
         <div class="rail">
@@ -128,6 +166,17 @@ export class ScreenShareController {
           </details>
 
           <div class="settings-panel" data-settings hidden>
+            <span class="label">Seu nome na sala</span>
+            <form class="alias-row" data-rename>
+              <input
+                id="alias-rename"
+                name="alias-rename"
+                aria-label="Alterar seu nome na sala"
+                maxlength="${ALIAS_MAX_LENGTH}"
+                autocomplete="nickname"
+              />
+              <button type="submit" class="theme-btn" data-rename-save>Salvar</button>
+            </form>
             <span class="label">Cor de destaque</span>
             <div class="swatches" data-swatches></div>
             <span class="label">Tema</span>
@@ -140,12 +189,12 @@ export class ScreenShareController {
           <div class="sidebar-footer">
             <div class="avatar" data-identity-avatar></div>
             <div class="info">
-              <span class="name">Você</span>
+              <span class="name" data-identity-name>Você</span>
               <span class="id mono" data-identity-id></span>
             </div>
             <div class="actions">
               <button type="button" class="btn-icon" data-footer-share title="Compartilhar tela">${CAMERA_ICON_SMALL}</button>
-              <button type="button" class="btn-icon" data-settings-toggle title="Configurações">${GEAR_ICON}</button>
+              <button type="button" class="btn-icon" data-settings-toggle title="Configurações">${SUN_ICON}</button>
               <a class="btn-icon" href="/" title="Início / sair da sala">${LEAVE_ICON}</a>
             </div>
           </div>
@@ -207,12 +256,36 @@ export class ScreenShareController {
             <button type="button" class="btn btn-outline" data-remote-play hidden>Reproduzir vídeo e áudio</button>
           </div>
         </div>
+      </div>
+      <div class="name-gate" data-name-gate>
+        <form class="name-gate-card" data-alias>
+          <div class="name-gate-icon">${CAMERA_ICON}</div>
+          <h2>Como você quer aparecer?</h2>
+          <p>Escolha o nome que os outros participantes vão ver nesta sala.</p>
+          <input
+            id="alias"
+            name="alias"
+            aria-label="Seu nome na sala"
+            maxlength="${ALIAS_MAX_LENGTH}"
+            autocomplete="nickname"
+            placeholder="Seu nome"
+          />
+          <button type="submit" class="btn btn-primary" data-alias-save>Entrar na sala</button>
+        </form>
       </div>`;
     required<HTMLElement>(root, '[data-room]').textContent = roomId;
     this.copyButton = required(root, '[data-copy]');
     this.participants = required(root, '[data-participants]');
     this.identity = required(root, '[data-identity]');
     this.identityId = required(root, '[data-identity-id]');
+    this.identityName = required(root, '[data-identity-name]');
+    this.nameGate = required(root, '[data-name-gate]');
+    this.aliasForm = required(root, '[data-alias]');
+    this.aliasInput = required(root, '#alias');
+    this.renameForm = required(root, '[data-rename]');
+    this.renameInput = required(root, '#alias-rename');
+    this.aliasInput.value = this.alias;
+    this.renameInput.value = this.alias;
     this.error = required(root, '[data-error]');
     this.reconnectButton = required(root, '[data-reconnect]');
     this.shareButton = required(root, '[data-share]');
@@ -267,10 +340,20 @@ export class ScreenShareController {
       this.settingsOpen = !this.settingsOpen;
       this.renderSettings();
     });
+    this.aliasForm.addEventListener('submit', event => {
+      event.preventDefault();
+      this.setAlias(this.aliasInput.value);
+      this.nameGate.hidden = true;
+    });
+    this.renameForm.addEventListener('submit', event => {
+      event.preventDefault();
+      this.setAlias(this.renameInput.value);
+    });
     this.themeDarkButton.addEventListener('click', () => this.setTheme('dark'));
     this.themeLightButton.addEventListener('click', () => this.setTheme('light'));
     this.renderSwatches();
     this.renderSettings();
+    this.aliasInput.focus();
     this.startSession();
   }
 
@@ -291,6 +374,32 @@ export class ScreenShareController {
     this.theme = theme;
     applyTheme(theme);
     this.renderSettings();
+  }
+
+  private nameOf(peerId: string | null) {
+    if (!peerId) return '';
+    const member = this.session?.members.find(entry => entry.peerId === peerId);
+    return member ? displayName(member) : participantName(peerId);
+  }
+
+  private setAlias(value: string) {
+    const alias = value.trim().slice(0, ALIAS_MAX_LENGTH);
+    this.alias = alias;
+    this.aliasInput.value = alias;
+    this.renameInput.value = alias;
+    try {
+      localStorage.setItem(ALIAS_STORAGE_KEY, alias);
+    } catch {
+      /* Sem persistência: o nome vale só para esta aba. */
+    }
+    this.renderMembers();
+    const session = this.session;
+    if (!session?.joined || session.disposed) return;
+    try {
+      session.channel?.send({ type: 'set-alias', alias });
+    } catch {
+      /* A reconexão reenviará o nome salvo. */
+    }
   }
 
   private setAccent(color: string) {
@@ -334,7 +443,7 @@ export class ScreenShareController {
     this.stopShareButton.disabled = !sharing && !this.capturing;
     this.footerShareButton.classList.toggle('is-active', sharing);
     this.reconnectButton.hidden = this.socketState === 'connecting' || this.socketState === 'connected';
-    this.headerTitle.textContent = this.selectedId ? participantName(this.selectedId) : 'Minha transmissão';
+    this.headerTitle.textContent = this.selectedId ? this.nameOf(this.selectedId) : 'Minha transmissão';
     this.headerSub.textContent = this.selectedId
       ? 'assistindo'
       : sharing
@@ -347,9 +456,13 @@ export class ScreenShareController {
   private renderMembers() {
     const members = this.session?.members ?? [];
     this.participants.textContent = `${members.length} / 5`;
-    this.identity.textContent = this.selfId ? `Você: ${participantName(this.selfId)}` : '';
+    this.identity.textContent = this.selfId ? `Você: ${this.nameOf(this.selfId)}` : '';
     this.identity.hidden = !this.selfId;
     this.identityId.textContent = this.selfId ? this.selfId.slice(0, 8) : '';
+    this.identityName.textContent = this.selfId ? this.nameOf(this.selfId) : 'Você';
+    const fallbackName = this.selfId ? participantName(this.selfId) : 'Participante';
+    this.aliasInput.placeholder = fallbackName;
+    this.renameInput.placeholder = fallbackName;
     const avatar = required<HTMLElement>(this.root, '[data-identity-avatar]');
     avatar.textContent = this.selfId ? initialsOf(this.selfId) : '';
     avatar.style.background = this.selfId ? avatarColor(this.selfId) : '';
@@ -365,7 +478,7 @@ export class ScreenShareController {
           <div class="dot${member.sharing ? ' is-live' : ''}"></div>
         </div>
         <div class="info">
-          <span class="name">${participantName(member.peerId)}${isSelf ? ' (você)' : ''}</span>
+          <span class="name">${escapeHtml(displayName(member))}</span>
           <span class="status">${member.sharing ? 'Transmitindo' : 'Sem transmissão'}</span>
         </div>`;
       if (canWatch) {
@@ -374,7 +487,7 @@ export class ScreenShareController {
         button.className = 'watch-btn';
         button.disabled = !this.connected();
         button.ariaPressed = String(isSelected);
-        button.title = `${isSelected ? 'Reconectar a' : 'Assistir a'} ${participantName(member.peerId)}`;
+        button.title = `${isSelected ? 'Reconectar a' : 'Assistir a'} ${displayName(member)}`;
         button.innerHTML = PLAY_ICON;
         button.addEventListener('click', () => this.watch(member.peerId));
         item.append(button);
@@ -403,14 +516,16 @@ export class ScreenShareController {
       tile.innerHTML = `
         <div class="screen-tile-thumb" style="background:${avatarColor(member.peerId)}22">
           <div class="screen-tile-overlay">
-            ${isSelected
-              ? `<span class="screen-tile-cta is-current">${CHECK_ICON} Assistindo</span>`
-              : `<span class="screen-tile-cta">${PLAY_ICON} Assistir transmissão</span>`}
+            ${
+              isSelected
+                ? `<span class="screen-tile-cta is-current">${CHECK_ICON} Assistindo</span>`
+                : `<span class="screen-tile-cta">${PLAY_ICON} Assistir transmissão</span>`
+            }
           </div>
         </div>
         <div class="screen-tile-tag">
           ${CAMERA_ICON_SMALL}
-          <span>${participantName(member.peerId)}</span>
+          <span>${escapeHtml(displayName(member))}</span>
         </div>`;
       tile.addEventListener('click', () => this.watch(isSelected ? null : member.peerId));
       this.pickerGrid.append(tile);
@@ -431,9 +546,10 @@ export class ScreenShareController {
     this.emptyState.hidden = watching || Boolean(reason);
     if (!reason) return;
     this.endedTitle.textContent = reason === 'remote' ? 'Transmissão encerrada' : 'Você encerrou o compartilhamento';
-    this.endedBody.textContent = reason === 'remote'
-      ? `Participante ${who?.slice(0, 8) ?? ''} parou de compartilhar a tela. Escolha outra transmissão na lista de participantes.`
-      : 'Sua tela não está mais sendo transmitida para a sala. Os outros participantes continuam conectados.';
+    this.endedBody.textContent =
+      reason === 'remote'
+        ? `Participante ${who?.slice(0, 8) ?? ''} parou de compartilhar a tela. Escolha outra transmissão na lista de participantes.`
+        : 'Sua tela não está mais sendo transmitida para a sala. Os outros participantes continuam conectados.';
     this.endedAction.textContent = reason === 'remote' ? 'Compartilhar minha tela' : 'Compartilhar novamente';
   }
 
@@ -455,8 +571,11 @@ export class ScreenShareController {
       if (notify) this.showEnded('me');
     }
     if (notify && session.joined) {
-      try { session.channel?.send({ type: 'sharing-stopped' }); }
-      catch { /* A desconexão do signaling também encerra a publicação. */ }
+      try {
+        session.channel?.send({ type: 'sharing-stopped' });
+      } catch {
+        /* A desconexão do signaling também encerra a publicação. */
+      }
     }
   }
 
@@ -483,12 +602,17 @@ export class ScreenShareController {
     let queue = Promise.resolve();
     const holder: { session?: Session } = {};
     const reportError = (error: unknown) => {
-      if (holder.session && this.isCurrent(holder.session)) this.setError(error instanceof Error ? error.message : 'Falha na conexão WebRTC.');
+      if (holder.session && this.isCurrent(holder.session))
+        this.setError(error instanceof Error ? error.message : 'Falha na conexão WebRTC.');
     };
     const peers = new Peers(
       message => holder.session!.channel!.send(message),
-      stream => { if (holder.session && this.isCurrent(holder.session)) this.remoteViewer.setStream(stream); },
-      () => { if (holder.session && this.isCurrent(holder.session)) this.renderPeerState(peers); },
+      stream => {
+        if (holder.session && this.isCurrent(holder.session)) this.remoteViewer.setStream(stream);
+      },
+      () => {
+        if (holder.session && this.isCurrent(holder.session)) this.renderPeerState(peers);
+      },
       reportError,
     );
     const session: Session = {
@@ -510,7 +634,9 @@ export class ScreenShareController {
     try {
       session.channel = connectSignaling(
         this.roomId,
-        message => { queue = queue.then(() => this.receive(session, message)).catch(reportError); },
+        message => {
+          queue = queue.then(() => this.receive(session, message)).catch(reportError);
+        },
         state => this.onSocketState(session, state),
       );
     } catch (error) {
@@ -558,6 +684,13 @@ export class ScreenShareController {
         this.selfId = message.peerId;
         this.updateMembers(session, message.peers);
         this.renderControls();
+        if (this.alias) {
+          try {
+            session.channel.send({ type: 'set-alias', alias: this.alias });
+          } catch {
+            /* A reconexão reenviará o nome salvo. */
+          }
+        }
         break;
       case 'room-state':
         this.updateMembers(session, message.peers);

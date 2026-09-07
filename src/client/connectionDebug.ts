@@ -49,7 +49,9 @@ export class ConnectionDebug {
           signalingState: pc.signalingState,
           video: await collectStats(pc, this.samples.get(pc)!),
         });
-      } catch { /* A conexão pode fechar enquanto getStats está pendente. */ }
+      } catch {
+        /* A conexão pode fechar enquanto getStats está pendente. */
+      }
     }
     this.render(rows);
     if (this.details.open) this.timer = setTimeout(() => void this.poll(), 2000);
@@ -69,12 +71,16 @@ export class ConnectionDebug {
       const title = document.createElement('h3');
       title.textContent = `${row.direction === 'send' ? 'Envio para' : 'Recebimento de'} ${row.peerId.slice(0, 8)}`;
       const state = document.createElement('pre');
-      state.textContent = JSON.stringify({
-        connectionState: row.connectionState,
-        iceConnectionState: row.iceConnectionState,
-        iceGatheringState: row.iceGatheringState,
-        signalingState: row.signalingState,
-      }, null, 2);
+      state.textContent = JSON.stringify(
+        {
+          connectionState: row.connectionState,
+          iceConnectionState: row.iceConnectionState,
+          iceGatheringState: row.iceGatheringState,
+          signalingState: row.signalingState,
+        },
+        null,
+        2,
+      );
       section.append(title, state);
       for (const video of row.video) {
         const line = document.createElement('p');

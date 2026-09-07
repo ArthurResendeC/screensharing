@@ -6,15 +6,19 @@ import { applyTheme, loadTheme } from './theme';
 
 const publicConfigSchema = z.object({
   maxVideoBitrate: z.number(),
-  turn: z.object({
-    urls: z.union([z.string(), z.array(z.string())]),
-    username: z.string().optional(),
-    credential: z.string().optional(),
-  }).nullable(),
+  turn: z
+    .object({
+      urls: z.union([z.string(), z.array(z.string())]),
+      username: z.string().optional(),
+      credential: z.string().optional(),
+    })
+    .nullable(),
 });
 
-const MOON_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path></svg>';
-const SUN_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"></circle><path d="M12 2.5v2.5M12 19v2.5M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2.5 12H5M19 12h2.5M4.2 19.8 6 18M18 6l1.8-1.8"></path></svg>';
+const MOON_ICON =
+  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path></svg>';
+const SUN_ICON =
+  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"></circle><path d="M12 2.5v2.5M12 19v2.5M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2.5 12H5M19 12h2.5M4.2 19.8 6 18M18 6l1.8-1.8"></path></svg>';
 
 function requiredRoot() {
   const root = document.querySelector<HTMLElement>('#app');
@@ -25,8 +29,11 @@ function requiredRoot() {
 function roomFromPath() {
   const match = location.pathname.match(/^\/room\/([^/]+)\/?$/);
   if (!match) return null;
-  try { return decodeURIComponent(match[1]); }
-  catch { return ''; }
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return '';
+  }
 }
 
 function renderLobby(root: HTMLElement) {
@@ -54,8 +61,14 @@ function renderLobby(root: HTMLElement) {
     darkButton.classList.toggle('is-active', theme === 'dark');
     lightButton.classList.toggle('is-active', theme === 'light');
   };
-  darkButton.addEventListener('click', () => { applyTheme('dark'); syncThemeButtons(); });
-  lightButton.addEventListener('click', () => { applyTheme('light'); syncThemeButtons(); });
+  darkButton.addEventListener('click', () => {
+    applyTheme('dark');
+    syncThemeButtons();
+  });
+  lightButton.addEventListener('click', () => {
+    applyTheme('light');
+    syncThemeButtons();
+  });
   syncThemeButtons();
   const error = root.querySelector<HTMLElement>('[data-error]')!;
   const showError = (message: string) => {
@@ -74,8 +87,11 @@ function renderLobby(root: HTMLElement) {
     event.preventDefault();
     const input = new FormData(form).get('room');
     let id = typeof input === 'string' ? input.trim() : '';
-    try { id = new URL(id).pathname.split('/').filter(Boolean).at(-1) ?? ''; }
-    catch { /* O valor pode ser somente o ID. */ }
+    try {
+      id = new URL(id).pathname.split('/').filter(Boolean).at(-1) ?? '';
+    } catch {
+      /* O valor pode ser somente o ID. */
+    }
     if (!roomIdSchema.safeParse(id).success) {
       showError('Informe um ID de sala válido ou o link de convite.');
       return;
@@ -101,7 +117,8 @@ async function main() {
   }
   if (!roomIdSchema.safeParse(roomId).success) {
     document.title = 'Sala inválida — WebRTC Screen Share';
-    root.innerHTML = '<main class="simple-page"><a href="/">← Início</a><h1>Sala inválida</h1><p>Use um convite válido ou crie uma nova sala.</p></main>';
+    root.innerHTML =
+      '<main class="simple-page"><a href="/">← Início</a><h1>Sala inválida</h1><p>Use um convite válido ou crie uma nova sala.</p></main>';
     return;
   }
   const controller = new ScreenShareController(root, roomId);

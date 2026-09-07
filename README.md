@@ -32,10 +32,11 @@ O processo deve iniciar a partir da raiz; o script `start` entra em `dist` para 
 ## Uso
 
 1. Clique em **Criar sala** e compartilhe o convite UUID.
-2. Qualquer participante pode clicar em **Compartilhar tela** e escolher tela, janela ou aba. Marque áudio no seletor quando disponível.
-3. Em **Transmissões da sala**, escolha uma pessoa que esteja transmitindo. Trocar a seleção fecha a recepção anterior.
-4. O preview local permanece sem som. O vídeo remoto não é silenciado; se o navegador bloquear autoplay com áudio, clique em **Reproduzir vídeo e áudio**.
-5. O botão nativo de parar captura, **Parar compartilhamento**, fechar a aba ou perder o signaling encerram tracks e conexões relacionadas.
+2. Ao entrar na sala, escolha em **Seu nome na sala** um apelido (até 32 caracteres) que substitui o nome padrão `Participante <id>` para todos. O valor fica salvo no navegador, é reenviado ao reconectar e pode ser alterado depois em **Configurações**.
+3. Qualquer participante pode clicar em **Compartilhar tela** e escolher tela, janela ou aba. Marque áudio no seletor quando disponível.
+4. Escolha uma pessoa que esteja transmitindo na barra lateral ou no seletor de telas. Trocar a seleção fecha a recepção anterior.
+5. O preview local permanece sem som. O vídeo remoto não é silenciado; se o navegador bloquear autoplay com áudio, clique em **Reproduzir vídeo e áudio**.
+6. O botão nativo de parar captura, **Parar compartilhamento**, fechar a aba ou perder o signaling encerram tracks e conexões relacionadas.
 
 A captura solicita 2560 × 1440 a 60 FPS como valores ideais. A interface mostra largura, altura, FPS e presença de áudio realmente entregues por `getSettings()`. Áudio de sistema depende do navegador, sistema operacional e tipo de superfície selecionada.
 
@@ -44,13 +45,16 @@ A captura solicita 2560 × 1440 a 60 FPS como valores ideais. A interface mostra
 ```bash
 bun run typecheck
 bun run lint
+bun run format:check
 bun test
 bun run build
 bunx playwright install --with-deps chromium
 bun run test:e2e
 ```
 
-O teste unitário do signaling cobre lotação, isolamento, autorização de relay, seleção única, publicações simultâneas, mensagens inválidas, taxa e backpressure. Os testes de peers cobrem ICE recebido antes do SDP, sessões antigas e cleanup independente. O Playwright usa WebRTC real com vídeo e áudio sintéticos em até cinco abas.
+`bun run lint` usa [oxlint](https://oxc.rs) com verificação type-aware via `tsgolint` (`oxlint --type-aware`); `bun run format` aplica o [oxfmt](https://oxc.rs) e `bun run format:check` valida. As configurações ficam em `.oxlintrc.json` e `.oxfmtrc.json`.
+
+O teste unitário do signaling cobre lotação, isolamento, autorização de relay, seleção única, publicações simultâneas, apelidos de participantes, mensagens inválidas, taxa e backpressure. Os testes de peers cobrem ICE recebido antes do SDP, sessões antigas e cleanup independente. O Playwright usa WebRTC real com vídeo e áudio sintéticos em até cinco abas.
 
 Para duas máquinas, use o domínio HTTPS do Railway ou outro domínio com TLS válido. `getDisplayMedia()` exige contexto seguro; HTTP por IP da rede local não basta. Crie a sala no PC A, abra o mesmo convite no PC B e escolha a transmissão. Redes diferentes podem exigir TURN.
 

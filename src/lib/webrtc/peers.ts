@@ -19,7 +19,9 @@ export class Peers {
     private onChange: () => void,
     private onError: (error: unknown) => void,
   ) {}
-  private current(entry: Entry) { return this.peers.get(entry.sessionId) === entry; }
+  private current(entry: Entry) {
+    return this.peers.get(entry.sessionId) === entry;
+  }
   private createPeerConnection(peerId: string, sessionId: string, direction: Entry['direction']) {
     this.removeSession(sessionId);
     const pc = new RTCPeerConnection(rtcConfiguration);
@@ -28,8 +30,15 @@ export class Peers {
     pc.onicecandidate = ({ candidate }) => {
       if (!candidate || !this.current(entry)) return;
       try {
-        this.send({ type: 'ice-candidate', targetPeerId: peerId, sessionId, candidate: { ...candidate.toJSON(), candidate: candidate.candidate } });
-      } catch (error) { this.onError(error); }
+        this.send({
+          type: 'ice-candidate',
+          targetPeerId: peerId,
+          sessionId,
+          candidate: { ...candidate.toJSON(), candidate: candidate.candidate },
+        });
+      } catch (error) {
+        this.onError(error);
+      }
     };
     pc.ontrack = ({ track, streams }) => {
       if (!this.current(entry) || direction !== 'receive') return;
@@ -37,7 +46,11 @@ export class Peers {
       if (!entry.remoteStream.getTracks().includes(track)) entry.remoteStream.addTrack(track);
       this.onStream(entry.remoteStream);
     };
-    pc.onconnectionstatechange = pc.oniceconnectionstatechange = pc.onicegatheringstatechange = pc.onsignalingstatechange = this.onChange;
+    pc.onconnectionstatechange =
+      pc.oniceconnectionstatechange =
+      pc.onicegatheringstatechange =
+      pc.onsignalingstatechange =
+        this.onChange;
     this.onChange();
     return entry;
   }
@@ -56,9 +69,17 @@ export class Peers {
       if (!this.current(entry)) return;
       await entry.pc.setLocalDescription(offer);
       if (!this.current(entry)) return;
-      this.send({ type: 'offer', targetPeerId: peerId, sessionId, sdp: { type: 'offer', sdp: entry.pc.localDescription!.sdp } });
+      this.send({
+        type: 'offer',
+        targetPeerId: peerId,
+        sessionId,
+        sdp: { type: 'offer', sdp: entry.pc.localDescription!.sdp },
+      });
     } catch (error) {
-      if (this.current(entry)) { this.removeSession(sessionId); this.onError(error); }
+      if (this.current(entry)) {
+        this.removeSession(sessionId);
+        this.onError(error);
+      }
     }
   }
   private async flush(entry: Entry) {
@@ -87,7 +108,13 @@ export class Peers {
         const answer = await pc.createAnswer();
         if (!this.current(entry)) return;
         await pc.setLocalDescription(answer);
-        if (this.current(entry)) this.send({ type: 'answer', targetPeerId: entry.peerId, sessionId: entry.sessionId, sdp: { type: 'answer', sdp: pc.localDescription!.sdp } });
+        if (this.current(entry))
+          this.send({
+            type: 'answer',
+            targetPeerId: entry.peerId,
+            sessionId: entry.sessionId,
+            sdp: { type: 'answer', sdp: pc.localDescription!.sdp },
+          });
         return;
       }
       if (entry.direction !== 'send' || pc.signalingState !== 'have-local-offer') return;
@@ -100,11 +127,18 @@ export class Peers {
         const parameters = sender.getParameters();
         if (!parameters.encodings?.length) continue;
         for (const encoding of parameters.encodings) encoding.maxBitrate = MAX_VIDEO_BITRATE;
-        try { await sender.setParameters(parameters); }
-        catch { if (this.current(entry)) this.onError(new Error('O navegador não aplicou o limite opcional de bitrate; a transmissão continua.')); }
+        try {
+          await sender.setParameters(parameters);
+        } catch {
+          if (this.current(entry))
+            this.onError(new Error('O navegador não aplicou o limite opcional de bitrate; a transmissão continua.'));
+        }
       }
     } catch (error) {
-      if (this.current(entry)) { this.removeSession(entry.sessionId); this.onError(error); }
+      if (this.current(entry)) {
+        this.removeSession(entry.sessionId);
+        this.onError(error);
+      }
     }
   }
   removeSession(sessionId: string) {
@@ -114,7 +148,11 @@ export class Peers {
     entry.candidates.length = 0;
     entry.pc.onicecandidate = null;
     entry.pc.ontrack = null;
-    entry.pc.onconnectionstatechange = entry.pc.oniceconnectionstatechange = entry.pc.onicegatheringstatechange = entry.pc.onsignalingstatechange = null;
+    entry.pc.onconnectionstatechange =
+      entry.pc.oniceconnectionstatechange =
+      entry.pc.onicegatheringstatechange =
+      entry.pc.onsignalingstatechange =
+        null;
     for (const receiver of entry.pc.getReceivers()) receiver.track?.stop();
     entry.pc.close();
     if (entry.direction === 'receive') this.onStream(null);

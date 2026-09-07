@@ -32,9 +32,9 @@ Depois, crie uma sala no domínio público e teste em dois navegadores ou máqui
 
 ## Configuração final
 
-| Serviço | Build | Start | Porta | Health check |
-| --- | --- | --- | --- | --- |
-| `web` | `bun run build` | `bun run start` | `$PORT` (3000 na IaC) | `/health` |
+| Serviço | Build           | Start           | Porta                 | Health check |
+| ------- | --------------- | --------------- | --------------------- | ------------ |
+| `web`   | `bun run build` | `bun run start` | `$PORT` (3000 na IaC) | `/health`    |
 
 Railpack detecta `bun.lock` e o `packageManager` fixado no `package.json`. A Railway termina TLS; Bun recebe HTTP/WS internamente e o navegador usa HTTPS/WSS na mesma origem. Não é necessário configurar URL pública de signaling.
 

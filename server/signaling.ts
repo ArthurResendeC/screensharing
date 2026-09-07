@@ -13,6 +13,7 @@ export type Client = {
   id: string;
   socket?: SignalingSocket;
   roomId?: string;
+  alias?: string;
   sharing: boolean;
   watching?: Subscription;
   alive: boolean;
@@ -49,7 +50,11 @@ export class SignalingHub {
   }
 
   private participants(room: Room) {
-    return [...room.members.values()].map(client => ({ peerId: client.id, sharing: client.sharing }));
+    return [...room.members.values()].map(client => ({
+      peerId: client.id,
+      sharing: client.sharing,
+      alias: client.alias ?? null,
+    }));
   }
 
   private broadcast(room: Room) {
@@ -61,9 +66,14 @@ export class SignalingHub {
     const subscription = viewer.watching;
     if (!subscription) return;
     viewer.watching = undefined;
-    this.send(viewer, { type: 'subscription-ended', peerId: subscription.publisherId, sessionId: subscription.sessionId });
+    this.send(viewer, {
+      type: 'subscription-ended',
+      peerId: subscription.publisherId,
+      sessionId: subscription.sessionId,
+    });
     const publisher = room.members.get(subscription.publisherId);
-    if (publisher) this.send(publisher, { type: 'subscription-ended', peerId: viewer.id, sessionId: subscription.sessionId });
+    if (publisher)
+      this.send(publisher, { type: 'subscription-ended', peerId: viewer.id, sessionId: subscription.sessionId });
   }
 
   private stopPublishing(publisher: Client, room: Room) {
@@ -146,6 +156,13 @@ export class SignalingHub {
       this.broadcast(room);
       return;
     }
+    if (message.type === 'set-alias') {
+      const alias = message.alias || undefined;
+      if (client.alias === alias) return;
+      client.alias = alias;
+      this.broadcast(room);
+      return;
+    }
     if (message.type === 'watch') {
       this.unsubscribe(client, room);
       const publisher = message.targetPeerId ? room.members.get(message.targetPeerId) : undefined;
@@ -167,9 +184,12 @@ export class SignalingHub {
       fail('Destino inválido.');
       return;
     }
-    const sending = client.sharing && target.watching?.publisherId === client.id && target.watching.sessionId === message.sessionId;
-    const receiving = target.sharing && client.watching?.publisherId === target.id && client.watching.sessionId === message.sessionId;
-    const authorized = message.type === 'offer' ? sending : message.type === 'answer' ? receiving : sending || receiving;
+    const sending =
+      client.sharing && target.watching?.publisherId === client.id && target.watching.sessionId === message.sessionId;
+    const receiving =
+      target.sharing && client.watching?.publisherId === target.id && client.watching.sessionId === message.sessionId;
+    const authorized =
+      message.type === 'offer' ? sending : message.type === 'answer' ? receiving : sending || receiving;
     if (!authorized) return;
     const { targetPeerId: _target, ...payload } = message;
     void _target;

@@ -10,10 +10,18 @@ class FakeSocket implements SignalingSocket {
     this.inbox.push(serverMessageSchema.parse(JSON.parse(message)));
     return message.length;
   }
-  close() { this.closed = true; }
-  terminate() { this.closed = true; }
-  ping() { return 1; }
-  getBufferedAmount() { return this.buffered; }
+  close() {
+    this.closed = true;
+  }
+  terminate() {
+    this.closed = true;
+  }
+  ping() {
+    return 1;
+  }
+  getBufferedAmount() {
+    return this.buffered;
+  }
   take(type: ServerMessage['type']) {
     const index = this.inbox.findIndex(message => message.type === type);
     if (index < 0) throw new Error(`Mensagem ${type} não encontrada`);
@@ -21,7 +29,12 @@ class FakeSocket implements SignalingSocket {
   }
 }
 
-type Peer = { client: Client; socket: FakeSocket; send(message: unknown): void; take(type: ServerMessage['type']): ServerMessage };
+type Peer = {
+  client: Client;
+  socket: FakeSocket;
+  send(message: unknown): void;
+  take(type: ServerMessage['type']): ServerMessage;
+};
 
 test('room subscriptions: one selection, reciprocal watching, isolation and independent lifecycle', () => {
   const hub = new SignalingHub();
@@ -80,7 +93,12 @@ test('room subscriptions: one selection, reciprocal watching, isolation and inde
       return sessionId;
     };
     const ca = watch(c, a);
-    const offer = { type: 'offer' as const, targetPeerId: c.id, sessionId: ca, sdp: { type: 'offer' as const, sdp: 'v=0\r\n' } };
+    const offer = {
+      type: 'offer' as const,
+      targetPeerId: c.id,
+      sessionId: ca,
+      sdp: { type: 'offer' as const, sdp: 'v=0\r\n' },
+    };
     a.send(offer);
     expect(c.take('offer')).toEqual({ type: 'offer', peerId: a.id, sessionId: ca, sdp: offer.sdp });
     c.send({ type: 'answer', targetPeerId: a.id, sessionId: ca, sdp: { type: 'answer', sdp: 'v=0\r\n' } });
@@ -119,7 +137,11 @@ test('room subscriptions: one selection, reciprocal watching, isolation and inde
     watch(c, b);
     extra.send({ type: 'join-room', roomId });
     const snapshot = extra.take('joined');
-    expect(snapshot.type === 'joined' && snapshot.peers.length === 5 && snapshot.peers.some(peer => peer.peerId === b.id && peer.sharing)).toBeTrue();
+    expect(
+      snapshot.type === 'joined' &&
+        snapshot.peers.length === 5 &&
+        snapshot.peers.some(peer => peer.peerId === b.id && peer.sharing),
+    ).toBeTrue();
 
     const stopId = crypto.randomUUID();
     c.send({ type: 'watch', targetPeerId: null, sessionId: stopId });
@@ -129,6 +151,58 @@ test('room subscriptions: one selection, reciprocal watching, isolation and inde
     e.send({ type: 'watch', targetPeerId: b.id, sessionId: db });
     e.take('watching');
     e.take('error');
+  } finally {
+    hub.close();
+  }
+});
+
+test('participant aliases: trimmed, capped, broadcast to the room and reset on leave', () => {
+  const hub = new SignalingHub();
+  const connect = () => {
+    const client = hub.createClient();
+    const socket = new FakeSocket();
+    hub.open(client, socket);
+    return { client, socket, send: (message: unknown) => hub.message(client, JSON.stringify(message)) };
+  };
+  const roomId = crypto.randomUUID();
+  const join = () => {
+    const peer = connect();
+    peer.send({ type: 'join-room', roomId });
+    const joined = peer.socket.take('joined');
+    if (joined.type !== 'joined') throw new Error();
+    return { ...peer, id: joined.peerId };
+  };
+  try {
+    const a = join();
+    const b = join();
+    b.socket.inbox.length = 0;
+
+    a.send({ type: 'set-alias', alias: `  ${'x'.repeat(40)}  ` });
+    const seenByB = b.socket.take('room-state');
+    if (seenByB.type !== 'room-state') throw new Error();
+    const aliasForA = seenByB.peers.find(peer => peer.peerId === a.id)?.alias;
+    expect(aliasForA).toBe('x'.repeat(32));
+
+    // Idempotent updates do not re-broadcast.
+    b.socket.inbox.length = 0;
+    a.send({ type: 'set-alias', alias: 'x'.repeat(32) });
+    expect(b.socket.inbox).toHaveLength(0);
+
+    // Clearing the alias falls back to null.
+    a.send({ type: 'set-alias', alias: '' });
+    const cleared = b.socket.take('room-state');
+    if (cleared.type !== 'room-state') throw new Error();
+    expect(cleared.peers.find(peer => peer.peerId === a.id)?.alias).toBeNull();
+
+    // Alias outside a room is rejected.
+    const outsider = connect();
+    outsider.send({ type: 'set-alias', alias: 'nope' });
+    expect(outsider.socket.take('error').type).toBe('error');
+
+    hub.leave(a.client);
+    const afterLeave = b.socket.take('room-state');
+    if (afterLeave.type !== 'room-state') throw new Error();
+    expect(afterLeave.peers.some(peer => peer.peerId === a.id)).toBeFalse();
   } finally {
     hub.close();
   }

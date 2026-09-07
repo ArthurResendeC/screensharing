@@ -12,6 +12,9 @@ export function loadTheme(): Theme {
 
 export function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
-  try { localStorage.setItem(STORAGE_KEY, theme); }
-  catch { /* Modo privado ou storage bloqueado: o tema só vale para esta sessão. */ }
+  try {
+    localStorage.setItem(STORAGE_KEY, theme);
+  } catch {
+    /* Modo privado ou storage bloqueado: o tema só vale para esta sessão. */
+  }
 }
