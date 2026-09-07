@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { roomIdSchema } from '../lib/signaling/messages';
 import { configureRtc } from '../lib/webrtc/rtcConfiguration';
 import { ScreenShareController } from './screenShare';
+import { applyTheme, loadTheme } from './theme';
 
 const publicConfigSchema = z.object({
   maxVideoBitrate: z.number(),
@@ -11,6 +12,9 @@ const publicConfigSchema = z.object({
     credential: z.string().optional(),
   }).nullable(),
 });
+
+const MOON_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path></svg>';
+const SUN_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"></circle><path d="M12 2.5v2.5M12 19v2.5M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2.5 12H5M19 12h2.5M4.2 19.8 6 18M18 6l1.8-1.8"></path></svg>';
 
 function requiredRoot() {
   const root = document.querySelector<HTMLElement>('#app');
@@ -27,18 +31,32 @@ function roomFromPath() {
 
 function renderLobby(root: HTMLElement) {
   root.innerHTML = `
-    <main>
+    <main class="lobby">
+      <div class="theme-switch">
+        <button type="button" class="btn-icon" data-theme-dark title="Tema escuro">${MOON_ICON}</button>
+        <button type="button" class="btn-icon" data-theme-light title="Tema claro">${SUN_ICON}</button>
+      </div>
       <h1>WebRTC Screen Share</h1>
       <p>Compartilhe sua tela com até quatro amigos. Todos podem transmitir e escolher uma tela para assistir.</p>
-      <button data-create>Criar sala</button>
+      <button type="button" class="btn btn-primary" data-create>Criar sala</button>
       <form data-join>
         <label for="room">ID ou URL da sala</label>
         <input id="room" name="room" required />
-        <button>Entrar</button>
+        <button type="submit" class="btn btn-outline">Entrar</button>
       </form>
       <p>O convite permite acesso à sala. Envie somente aos seus amigos.</p>
       <p role="alert" class="error" data-error hidden></p>
     </main>`;
+  const darkButton = root.querySelector<HTMLButtonElement>('[data-theme-dark]')!;
+  const lightButton = root.querySelector<HTMLButtonElement>('[data-theme-light]')!;
+  const syncThemeButtons = () => {
+    const theme = loadTheme();
+    darkButton.classList.toggle('is-active', theme === 'dark');
+    lightButton.classList.toggle('is-active', theme === 'light');
+  };
+  darkButton.addEventListener('click', () => { applyTheme('dark'); syncThemeButtons(); });
+  lightButton.addEventListener('click', () => { applyTheme('light'); syncThemeButtons(); });
+  syncThemeButtons();
   const error = root.querySelector<HTMLElement>('[data-error]')!;
   const showError = (message: string) => {
     error.textContent = message;
@@ -67,6 +85,7 @@ function renderLobby(root: HTMLElement) {
 }
 
 async function main() {
+  applyTheme(loadTheme());
   const root = requiredRoot();
   try {
     const response = await fetch('/config.json', { cache: 'no-store' });
@@ -82,7 +101,7 @@ async function main() {
   }
   if (!roomIdSchema.safeParse(roomId).success) {
     document.title = 'Sala inválida — WebRTC Screen Share';
-    root.innerHTML = '<main><a href="/">← Início</a><h1>Sala inválida</h1><p>Use um convite válido ou crie uma nova sala.</p></main>';
+    root.innerHTML = '<main class="simple-page"><a href="/">← Início</a><h1>Sala inválida</h1><p>Use um convite válido ou crie uma nova sala.</p></main>';
     return;
   }
   const controller = new ScreenShareController(root, roomId);
