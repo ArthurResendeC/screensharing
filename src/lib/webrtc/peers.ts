@@ -1,5 +1,5 @@
 import type { ClientMessage, PeerSignal } from '../signaling/messages';
-import { MAX_VIDEO_BITRATE, rtcConfiguration } from './rtcConfiguration';
+import { MAX_VIDEO_BITRATE, VIDEO_DEGRADATION_PREFERENCE, rtcConfiguration } from './rtcConfiguration';
 import { tuneVideoBitrate } from './sdp';
 
 type Entry = {
@@ -123,27 +123,36 @@ export class Peers {
       await pc.setRemoteDescription({ type: 'answer', sdp: tuneVideoBitrate(message.sdp.sdp) });
       if (!this.current(entry)) return;
       await this.flush(entry);
-      for (const sender of pc.getSenders()) {
-        if (!this.current(entry)) return;
-        if (sender.track?.kind !== 'video') continue;
-        const parameters = sender.getParameters();
-        if (!parameters.encodings?.length) continue;
-        // Screen content: hold resolution, drop framerate under pressure.
-        parameters.degradationPreference = 'maintain-resolution';
-        if (MAX_VIDEO_BITRATE) for (const encoding of parameters.encodings) encoding.maxBitrate = MAX_VIDEO_BITRATE;
-        try {
-          await sender.setParameters(parameters);
-        } catch {
-          if (this.current(entry))
-            this.onError(new Error('O navegador não aplicou o limite opcional de bitrate; a transmissão continua.'));
-        }
-      }
+      if (this.current(entry)) await this.applyEncodeParameters(entry);
     } catch (error) {
       if (this.current(entry)) {
         this.removeSession(entry.sessionId);
         this.onError(error);
       }
     }
+  }
+  // The sender only honours maxBitrate/degradationPreference once it has a transceiver,
+  // so this runs after negotiation and again whenever the encode settings change.
+  private async applyEncodeParameters(entry: Entry) {
+    for (const sender of entry.pc.getSenders()) {
+      if (!this.current(entry)) return;
+      if (sender.track?.kind !== 'video') continue;
+      const parameters = sender.getParameters();
+      if (!parameters.encodings?.length) continue;
+      parameters.degradationPreference = VIDEO_DEGRADATION_PREFERENCE;
+      if (MAX_VIDEO_BITRATE) for (const encoding of parameters.encodings) encoding.maxBitrate = MAX_VIDEO_BITRATE;
+      try {
+        await sender.setParameters(parameters);
+      } catch {
+        if (this.current(entry))
+          this.onError(
+            new Error('O navegador não aplicou as preferências opcionais de codificação; a transmissão continua.'),
+          );
+      }
+    }
+  }
+  async reapplyEncodeParameters() {
+    for (const entry of this.peers.values()) if (entry.direction === 'send') await this.applyEncodeParameters(entry);
   }
   removeSession(sessionId: string) {
     const entry = this.peers.get(sessionId);

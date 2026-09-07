@@ -1,6 +1,7 @@
 import { connectSignaling } from '../lib/signaling/client';
 import { ALIAS_MAX_LENGTH, type Participant, type ServerMessage } from '../lib/signaling/messages';
 import { Peers } from '../lib/webrtc/peers';
+import { setVideoDegradation, type VideoDegradation } from '../lib/webrtc/rtcConfiguration';
 import { ConnectionDebug } from './connectionDebug';
 import { playSound, unlockSounds } from './sounds';
 import { applyTheme, loadTheme, type Theme } from './theme';
@@ -76,6 +77,27 @@ const avatarColor = (name: string) => {
 
 const ALIAS_STORAGE_KEY = 'screen-share:alias';
 const LAST_ROOM_STORAGE_KEY = 'screen-share:last-room';
+const DEGRADATION_STORAGE_KEY = 'screen-share:degradation';
+const CAPTURE_STORAGE_KEY = 'screen-share:capture';
+
+const DEGRADATION_CHOICES = ['framerate', 'balanced', 'resolution'] as const;
+type CaptureQuality = 'fluid' | 'balanced' | 'sharp';
+const CAPTURE_CHOICES = ['fluid', 'balanced', 'sharp'] as const;
+// Fewer pixels per second is the surest way to a steady framerate; 'fluid' is the default.
+const CAPTURE_PRESETS: Record<CaptureQuality, MediaTrackConstraints> = {
+  fluid: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } },
+  balanced: { width: { ideal: 2560 }, height: { ideal: 1440 }, frameRate: { ideal: 30 } },
+  sharp: { width: { ideal: 2560 }, height: { ideal: 1440 }, frameRate: { ideal: 60 } },
+};
+
+function storedChoice<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  try {
+    const value = localStorage.getItem(key) as T;
+    return allowed.includes(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 export function rememberRoom(roomId: string) {
   try {
@@ -129,6 +151,8 @@ export class ScreenShareController {
   private knownWatcherIds = new Set<string>();
   private theme: Theme = loadTheme();
   private accent = ACCENTS[0]!.color;
+  private degradation: VideoDegradation = storedChoice(DEGRADATION_STORAGE_KEY, DEGRADATION_CHOICES, 'framerate');
+  private captureQuality: CaptureQuality = storedChoice(CAPTURE_STORAGE_KEY, CAPTURE_CHOICES, 'fluid');
   private readonly localViewer: Viewer;
   private readonly remoteViewer: Viewer;
   private readonly debug: ConnectionDebug;
@@ -155,6 +179,8 @@ export class ScreenShareController {
   private readonly swatches: HTMLElement;
   private readonly themeDarkButton: HTMLButtonElement;
   private readonly themeLightButton: HTMLButtonElement;
+  private readonly degradationSelect: HTMLSelectElement;
+  private readonly captureSelect: HTMLSelectElement;
   private readonly sharingInfo: HTMLElement;
   private readonly captureInfo: HTMLElement;
   private readonly watchersRow: HTMLElement;
@@ -231,6 +257,18 @@ export class ScreenShareController {
               <button type="button" class="theme-btn" data-theme-dark>Escuro</button>
               <button type="button" class="theme-btn" data-theme-light>Claro</button>
             </div>
+            <span class="label">Sob carga, priorizar</span>
+            <select class="settings-select" data-degradation aria-label="O que priorizar sob carga de CPU ou rede">
+              <option value="framerate">Fluidez — FPS estável, imagem pode borrar</option>
+              <option value="balanced">Equilíbrio entre FPS e nitidez</option>
+              <option value="resolution">Nitidez — imagem nítida, FPS pode cair</option>
+            </select>
+            <span class="label">Qualidade da captura</span>
+            <select class="settings-select" data-capture aria-label="Resolução e taxa de quadros da captura">
+              <option value="fluid">Fluida — 1080p · 60 FPS</option>
+              <option value="balanced">Equilibrada — 1440p · 30 FPS</option>
+              <option value="sharp">Nítida — 1440p · 60 FPS</option>
+            </select>
           </div>
 
           <div class="sidebar-footer">
@@ -366,6 +404,8 @@ export class ScreenShareController {
     this.swatches = required(root, '[data-swatches]');
     this.themeDarkButton = required(root, '[data-theme-dark]');
     this.themeLightButton = required(root, '[data-theme-light]');
+    this.degradationSelect = required(root, '[data-degradation]');
+    this.captureSelect = required(root, '[data-capture]');
     this.sharingInfo = required(root, '[data-sharing-info]');
     this.captureInfo = required(root, '[data-capture-info]');
     this.watchersRow = required(root, '[data-watchers]');
@@ -438,6 +478,13 @@ export class ScreenShareController {
     });
     this.themeDarkButton.addEventListener('click', () => this.setTheme('dark'));
     this.themeLightButton.addEventListener('click', () => this.setTheme('light'));
+    this.degradationSelect.addEventListener('change', () =>
+      this.setDegradation(this.degradationSelect.value as VideoDegradation),
+    );
+    this.captureSelect.addEventListener(
+      'change',
+      () => void this.setCaptureQuality(this.captureSelect.value as CaptureQuality),
+    );
     this.joinErrorRetry.addEventListener('click', () => this.startSession());
     // A backgrounded tab (common while you present your screen) has its reconnect
     // timers throttled or frozen, so also retry the moment the tab is looked at again
@@ -445,6 +492,7 @@ export class ScreenShareController {
     document.addEventListener('visibilitychange', this.wakeReconnect);
     window.addEventListener('online', this.wakeReconnect);
     window.addEventListener('pageshow', this.wakeReconnect);
+    setVideoDegradation(this.degradation);
     this.renderSwatches();
     this.renderSettings();
     if (!this.nameGate.hidden) this.aliasInput.focus();
@@ -534,6 +582,37 @@ export class ScreenShareController {
     this.settingsButton.classList.toggle('is-active', this.settingsOpen);
     this.themeDarkButton.classList.toggle('is-active', this.theme === 'dark');
     this.themeLightButton.classList.toggle('is-active', this.theme === 'light');
+    this.degradationSelect.value = this.degradation;
+    this.captureSelect.value = this.captureQuality;
+  }
+
+  private setDegradation(value: VideoDegradation) {
+    this.degradation = value;
+    setVideoDegradation(value);
+    try {
+      localStorage.setItem(DEGRADATION_STORAGE_KEY, value);
+    } catch {
+      /* Sem persistência: vale só para esta aba. */
+    }
+    void this.session?.peers.reapplyEncodeParameters();
+  }
+
+  private async setCaptureQuality(value: CaptureQuality) {
+    this.captureQuality = value;
+    try {
+      localStorage.setItem(CAPTURE_STORAGE_KEY, value);
+    } catch {
+      /* Sem persistência: vale só para esta aba. */
+    }
+    const track = this.localStream?.getVideoTracks()[0];
+    if (track?.readyState !== 'live') return;
+    try {
+      await track.applyConstraints(CAPTURE_PRESETS[value]);
+    } catch {
+      this.setError(
+        'O navegador não reconfigurou a captura ao vivo; a nova qualidade vale no próximo compartilhamento.',
+      );
+    }
   }
 
   private async toggleShare() {
@@ -1043,7 +1122,7 @@ export class ScreenShareController {
     this.renderControls();
     try {
       const captured = await navigator.mediaDevices.getDisplayMedia({
-        video: { width: { ideal: 2560 }, height: { ideal: 1440 }, frameRate: { ideal: 60 } },
+        video: CAPTURE_PRESETS[this.captureQuality],
         audio: true,
       });
       if (!this.isCurrent(session) || !session.joined || session.capture !== capture) {

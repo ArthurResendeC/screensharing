@@ -8,6 +8,15 @@ export let MAX_VIDEO_BITRATE: number | undefined = 15_000_000;
 export let MIN_VIDEO_BITRATE: number | undefined = 2_500_000;
 export let START_VIDEO_BITRATE: number | undefined = 8_000_000;
 
+// What the encoder sacrifices under CPU/bandwidth pressure. 'framerate' keeps FPS and
+// bitrate steady and lets resolution scale down; 'resolution' does the opposite.
+export type VideoDegradation = 'framerate' | 'balanced' | 'resolution';
+export let VIDEO_DEGRADATION_PREFERENCE: RTCDegradationPreference = 'maintain-framerate';
+export function setVideoDegradation(value: VideoDegradation) {
+  VIDEO_DEGRADATION_PREFERENCE =
+    value === 'resolution' ? 'maintain-resolution' : value === 'balanced' ? 'balanced' : 'maintain-framerate';
+}
+
 export type PublicRtcConfiguration = {
   maxVideoBitrate?: number;
   minVideoBitrate?: number;

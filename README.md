@@ -68,9 +68,11 @@ O servidor só encaminha offer, answer e ICE quando remetente, destino, sala, di
 
 ## Bitrate, codecs e custo
 
-`src/lib/webrtc/rtcConfiguration.ts` centraliza ICE e o teto `MAX_VIDEO_BITRATE`, cujo padrão é 15 Mbps **por espectador**. Após a answer, o transmissor altera `encodings[].maxBitrate` a partir de `RTCRtpSender.getParameters()`, define `degradationPreference` como `maintain-resolution` e chama `setParameters()`. O valor é uma solicitação: navegador, congestionamento, CPU e captura podem entregar menos.
+`src/lib/webrtc/rtcConfiguration.ts` centraliza ICE e o teto `MAX_VIDEO_BITRATE`, cujo padrão é 15 Mbps **por espectador**. Após a answer, o transmissor altera `encodings[].maxBitrate` a partir de `RTCRtpSender.getParameters()`, define `degradationPreference` e chama `setParameters()`; a mesma rotina roda de novo quando as configurações mudam ao vivo. O valor é uma solicitação: navegador, congestionamento, CPU e captura podem entregar menos.
 
 `MIN_VIDEO_BITRATE` (2,5 Mbps) e `START_VIDEO_BITRATE` (8 Mbps) são injetados na SDP de vídeo como `x-google-min-bitrate` / `x-google-start-bitrate` por `src/lib/webrtc/sdp.ts`, evitando que o bitrate desabe numa tela estática e suba lentamente quando o conteúdo volta a se mover. A track de captura usa `contentHint = 'motion'`. Só o Chrome/Edge respeitam as dicas `x-google-*`; `0` desativa cada uma.
+
+Não dá para fixar resolução, FPS e bitrate ao mesmo tempo — sob carga um deles cede. As Configurações expõem essa escolha ("Sob carga, priorizar": fluidez / equilíbrio / nitidez → `maintain-framerate` / `balanced` / `maintain-resolution`, padrão fluidez) e a qualidade da captura (1080p·60 / 1440p·30 / 1440p·60, padrão 1080p·60). As duas ficam no `localStorage` e valem para o próximo compartilhamento; a preferência de degradação e a taxa de quadros também se aplicam a uma transmissão em andamento.
 
 A negociação padrão escolhe o codec. **Debug WebRTC** exibe capacidades locais, estados de conexão e estatísticas de RTP a cada dois segundos somente enquanto a seção está aberta.
 
