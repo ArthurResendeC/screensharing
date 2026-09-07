@@ -7,15 +7,9 @@ A infraestrutura está em [`railway.ts`](./railway.ts), usando o [SDK oficial de
 - Ambiente: `production`
 - Aplicação: https://web-production-af1c0.up.railway.app
 
-## Migração segura dos dois serviços
+## Atualizações
 
-A versão anterior tinha `web` e `signaling`. A nova versão reúne frontend e signaling no serviço `web`. Para evitar remover o signaling antigo antes de validar o novo processo, faça o corte em duas etapas:
-
-1. Aplique temporariamente a configuração mantendo a declaração antiga de `signaling`, mas com a nova configuração de `web`.
-2. Envie somente `web`, valide `/health`, carregamento da sala e WebSocket `/signaling`.
-3. Aplique a versão final de `railway.ts` deste repositório, que remove `signaling`.
-
-O passo intermediário só é necessário no primeiro deploy desta migração. Em atualizações futuras, use diretamente:
+A migração dos serviços separados foi concluída em 7 de setembro de 2026: o novo `web` foi publicado e validado antes da remoção do `signaling` legado. Para atualizações futuras, use:
 
 ```bash
 bun install --frozen-lockfile
