@@ -78,9 +78,12 @@ async function capture(page: Page, color: string, withAudio = true) {
   );
 }
 async function enterRoom(page: Page, name?: string) {
+  const gate = page.locator('[data-name-gate]');
+  // A stored alias means the gate never shows again; nothing to do.
+  if (await gate.isHidden()) return;
   if (name !== undefined) await page.getByLabel('Seu nome na sala', { exact: true }).fill(name);
   await page.getByRole('button', { name: 'Entrar na sala', exact: true }).click();
-  await expect(page.locator('[data-name-gate]')).toBeHidden();
+  await expect(gate).toBeHidden();
 }
 async function identity(page: Page) {
   return (await page.getByText(/^Você: /).innerText()).replace('Você: ', '');

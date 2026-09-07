@@ -295,6 +295,7 @@ export class ScreenShareController {
     this.renameInput = required(root, '#alias-rename');
     this.aliasInput.value = this.alias;
     this.renameInput.value = this.alias;
+    this.nameGate.hidden = this.alias.length > 0;
     this.error = required(root, '[data-error]');
     this.reconnectButton = required(root, '[data-reconnect]');
     this.shareButton = required(root, '[data-share]');
@@ -365,7 +366,7 @@ export class ScreenShareController {
     this.themeLightButton.addEventListener('click', () => this.setTheme('light'));
     this.renderSwatches();
     this.renderSettings();
-    this.aliasInput.focus();
+    if (!this.nameGate.hidden) this.aliasInput.focus();
     this.startSession();
   }
 
