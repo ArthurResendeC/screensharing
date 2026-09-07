@@ -75,6 +75,24 @@ const avatarColor = (name: string) => {
 };
 
 const ALIAS_STORAGE_KEY = 'screen-share:alias';
+const LAST_ROOM_STORAGE_KEY = 'screen-share:last-room';
+
+export function rememberRoom(roomId: string) {
+  try {
+    localStorage.setItem(LAST_ROOM_STORAGE_KEY, roomId);
+  } catch {
+    /* localStorage may be unavailable */
+  }
+}
+
+export function recallRoom() {
+  try {
+    return localStorage.getItem(LAST_ROOM_STORAGE_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
 function storedAlias() {
   try {
     return (localStorage.getItem(ALIAS_STORAGE_KEY) ?? '').trim().slice(0, ALIAS_MAX_LENGTH);
@@ -322,6 +340,7 @@ export class ScreenShareController {
         </div>
       </div>`;
     required<HTMLElement>(root, '[data-room]').textContent = roomId;
+    rememberRoom(roomId);
     this.copyButton = required(root, '[data-copy]');
     this.listToggleButton = required(root, '[data-list-toggle]');
     this.leaveStreamButton = required(root, '[data-leave-stream]');

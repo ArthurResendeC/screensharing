@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { roomIdSchema } from '../lib/signaling/messages';
 import { configureRtc } from '../lib/webrtc/rtcConfiguration';
-import { ScreenShareController } from './screenShare';
+import { recallRoom, ScreenShareController } from './screenShare';
 import { applyTheme, loadTheme } from './theme';
 
 const publicConfigSchema = z.object({
@@ -39,6 +39,8 @@ function roomFromPath() {
 }
 
 function renderLobby(root: HTMLElement) {
+  const lastRoom = recallRoom();
+  const canRejoin = lastRoom.length > 0 && roomIdSchema.safeParse(lastRoom).success;
   root.innerHTML = `
     <main class="lobby">
       <div class="theme-switch">
@@ -48,6 +50,7 @@ function renderLobby(root: HTMLElement) {
       <h1>WebRTC Screen Share</h1>
       <p>Compartilhe sua tela com até quatro amigos. Todos podem transmitir e escolher uma tela para assistir.</p>
       <button type="button" class="btn btn-primary" data-create>Criar sala</button>
+      ${canRejoin ? `<button type="button" class="btn btn-outline" data-rejoin>Voltar à última sala</button>` : ''}
       <form data-join>
         <label for="room">ID ou URL da sala</label>
         <input id="room" name="room" required />
@@ -77,6 +80,11 @@ function renderLobby(root: HTMLElement) {
     error.textContent = message;
     error.hidden = false;
   };
+  if (canRejoin) {
+    root.querySelector<HTMLButtonElement>('[data-rejoin]')!.addEventListener('click', () => {
+      location.assign(`/room/${encodeURIComponent(lastRoom)}`);
+    });
+  }
   root.querySelector<HTMLButtonElement>('[data-create]')!.addEventListener('click', () => {
     if (!crypto.randomUUID) {
       showError('Abra em HTTPS ou localhost para criar a sala.');
