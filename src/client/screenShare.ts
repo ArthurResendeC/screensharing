@@ -2,6 +2,7 @@ import { connectSignaling } from '../lib/signaling/client';
 import { ALIAS_MAX_LENGTH, type Participant, type ServerMessage } from '../lib/signaling/messages';
 import { Peers } from '../lib/webrtc/peers';
 import { ConnectionDebug } from './connectionDebug';
+import { playSound, unlockSounds } from './sounds';
 import { applyTheme, loadTheme, type Theme } from './theme';
 import { Viewer } from './viewer';
 
@@ -16,6 +17,7 @@ type Session = {
   disposed: boolean;
   capture: number;
   joined: boolean;
+  membersSeeded: boolean;
 };
 
 const ACCENTS = [
@@ -39,8 +41,8 @@ const ARROW_LEFT_ICON =
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>';
 const PLAY_ICON =
   '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="7,4 20,12 7,20"></polygon></svg>';
-const SUN_ICON =
-  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"></circle><path d="M12 2.5v2.5M12 19v2.5M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2.5 12H5M19 12h2.5M4.2 19.8 6 18M18 6l1.8-1.8"></path></svg>';
+const GEAR_ICON =
+  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>';
 const LEAVE_ICON =
   '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"></path><polyline points="9 8 4.5 12 9 16"></polyline><line x1="4.5" y1="12" x2="14.5" y2="12"></line></svg>';
 const STOP_ICON =
@@ -51,6 +53,8 @@ const ENDED_ICON =
   '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2.5" y="4" width="19" height="13" rx="2"></rect><line x1="8" y1="20.5" x2="16" y2="20.5"></line><line x1="4" y1="3" x2="20" y2="18"></line></svg>';
 const CHECK_ICON =
   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+const GRID_ICON =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>';
 
 const participantName = (id: string) => `Participante ${id.slice(0, 8)}`;
 const displayName = (participant: Participant) => participant.alias || participantName(participant.peerId);
@@ -96,6 +100,7 @@ export class ScreenShareController {
   private disposed = false;
   private settingsTimer?: ReturnType<typeof setInterval>;
   private settingsOpen = false;
+  private endedReason: 'me' | 'remote' | null = null;
   private theme: Theme = loadTheme();
   private accent = ACCENTS[0]!.color;
   private readonly localViewer: Viewer;
@@ -103,6 +108,7 @@ export class ScreenShareController {
   private readonly debug: ConnectionDebug;
 
   private readonly copyButton: HTMLButtonElement;
+  private readonly listToggleButton: HTMLButtonElement;
   private readonly participants: HTMLElement;
   private readonly identity: HTMLElement;
   private readonly identityId: HTMLElement;
@@ -135,8 +141,13 @@ export class ScreenShareController {
   private readonly endedState: HTMLElement;
   private readonly endedTitle: HTMLElement;
   private readonly endedBody: HTMLElement;
-  private readonly endedAction: HTMLButtonElement;
+  private readonly endedPrimary: HTMLButtonElement;
+  private readonly endedSecondary: HTMLButtonElement;
   private readonly connection: HTMLElement;
+  private readonly joinErrorModal: HTMLElement;
+  private readonly joinErrorTitle: HTMLElement;
+  private readonly joinErrorBody: HTMLElement;
+  private readonly joinErrorRetry: HTMLButtonElement;
 
   constructor(
     private readonly root: HTMLElement,
@@ -203,7 +214,7 @@ export class ScreenShareController {
             </div>
             <div class="actions">
               <button type="button" class="btn-icon" data-footer-share title="Compartilhar tela">${CAMERA_ICON_SMALL}</button>
-              <button type="button" class="btn-icon" data-settings-toggle title="Configurações">${SUN_ICON}</button>
+              <button type="button" class="btn-icon" data-settings-toggle title="Configurações">${GEAR_ICON}</button>
               <a class="btn-icon" href="/" title="Início / sair da sala">${LEAVE_ICON}</a>
             </div>
           </div>
@@ -215,7 +226,10 @@ export class ScreenShareController {
             <span class="title" data-header-title>Minha transmissão</span>
             <div class="divider"></div>
             <span class="sub" data-header-sub>nenhuma tela ativa</span>
-            <button type="button" class="btn btn-primary" data-copy>${PLUS_ICON_SMALL} Copiar convite</button>
+            <div class="actions">
+              <button type="button" class="btn btn-outline" data-list-toggle hidden>${GRID_ICON} Ver lista</button>
+              <button type="button" class="btn btn-primary" data-copy>${PLUS_ICON_SMALL} Copiar convite</button>
+            </div>
           </div>
 
           <div class="stage">
@@ -242,7 +256,10 @@ export class ScreenShareController {
                   <h2 data-ended-title></h2>
                   <p data-ended-body></p>
                 </div>
-                <button type="button" class="btn btn-primary" data-ended-action style="margin-top:2px;"></button>
+                <div class="modal-actions" style="margin-top:2px;">
+                  <button type="button" class="btn btn-primary" data-ended-primary></button>
+                  <button type="button" class="btn btn-outline" data-ended-secondary></button>
+                </div>
               </div>
               <video autoplay playsinline controls aria-label="Transmissão selecionada" data-remote-video></video>
             </div>
@@ -281,9 +298,22 @@ export class ScreenShareController {
           />
           <button type="submit" class="btn btn-primary" data-alias-save>Entrar na sala</button>
         </form>
+
+        <div class="modal-overlay" data-join-error-modal hidden>
+          <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="join-error-title">
+            <div class="icon">${ENDED_ICON}</div>
+            <h2 id="join-error-title" data-join-error-title></h2>
+            <p data-join-error-body></p>
+            <div class="modal-actions">
+              <a class="btn btn-primary" href="/">Voltar ao início</a>
+              <button type="button" class="btn btn-outline" data-join-error-retry>Tentar novamente</button>
+            </div>
+          </div>
+        </div>
       </div>`;
     required<HTMLElement>(root, '[data-room]').textContent = roomId;
     this.copyButton = required(root, '[data-copy]');
+    this.listToggleButton = required(root, '[data-list-toggle]');
     this.participants = required(root, '[data-participants]');
     this.identity = required(root, '[data-identity]');
     this.identityId = required(root, '[data-identity-id]');
@@ -319,8 +349,13 @@ export class ScreenShareController {
     this.endedState = required(root, '[data-ended-state]');
     this.endedTitle = required(root, '[data-ended-title]');
     this.endedBody = required(root, '[data-ended-body]');
-    this.endedAction = required(root, '[data-ended-action]');
+    this.endedPrimary = required(root, '[data-ended-primary]');
+    this.endedSecondary = required(root, '[data-ended-secondary]');
     this.connection = required(root, '[data-connection]');
+    this.joinErrorModal = required(root, '[data-join-error-modal]');
+    this.joinErrorTitle = required(root, '[data-join-error-title]');
+    this.joinErrorBody = required(root, '[data-join-error-body]');
+    this.joinErrorRetry = required(root, '[data-join-error-retry]');
     this.localViewer = new Viewer(
       required(root, 'video[aria-label="Preview local"]'),
       required(root, '[data-local-empty]'),
@@ -343,12 +378,21 @@ export class ScreenShareController {
       this.reconnectAttempts = 0;
       this.startSession();
     });
+    this.listToggleButton.addEventListener('click', () => this.watch(null));
+    this.reconnectButton.addEventListener('click', () => this.startSession());
     this.shareButton.addEventListener('click', () => void this.share());
     this.footerShareButton.addEventListener('click', () => void this.toggleShare());
     this.stopShareButton.addEventListener('click', () => {
       if (this.session) this.stopSharing(this.session, true);
     });
-    this.endedAction.addEventListener('click', () => void this.share());
+    this.endedPrimary.addEventListener('click', () => {
+      if (this.endedReason === 'remote') this.showEnded(null);
+      else void this.share();
+    });
+    this.endedSecondary.addEventListener('click', () => {
+      if (this.endedReason === 'remote') void this.share();
+      else this.showEnded(null);
+    });
     this.settingsButton.addEventListener('click', () => {
       this.settingsOpen = !this.settingsOpen;
       this.renderSettings();
@@ -364,9 +408,12 @@ export class ScreenShareController {
     });
     this.themeDarkButton.addEventListener('click', () => this.setTheme('dark'));
     this.themeLightButton.addEventListener('click', () => this.setTheme('light'));
+    this.joinErrorRetry.addEventListener('click', () => this.startSession());
     this.renderSwatches();
     this.renderSettings();
     if (!this.nameGate.hidden) this.aliasInput.focus();
+    this.aliasInput.focus();
+    unlockSounds();
     this.startSession();
   }
 
@@ -377,6 +424,19 @@ export class ScreenShareController {
   private setError(message: string) {
     this.error.textContent = message;
     this.error.hidden = !message;
+  }
+
+  private showJoinError(message: string) {
+    const isFull = /cheia/i.test(message);
+    this.joinErrorTitle.textContent = isFull ? 'Sala cheia' : 'Não foi possível entrar';
+    this.joinErrorBody.textContent = isFull
+      ? `${message} Aguarde alguém sair ou peça um novo convite.`
+      : message;
+    this.joinErrorModal.hidden = false;
+  }
+
+  private hideJoinError() {
+    this.joinErrorModal.hidden = true;
   }
 
   private connected() {
@@ -462,8 +522,8 @@ export class ScreenShareController {
       : sharing
         ? 'transmitindo sua tela'
         : 'nenhuma tela ativa';
-    const watching = Boolean(this.selectedId) || sharing;
-    this.emptyState.hidden = watching;
+    this.emptyState.hidden = Boolean(this.selectedId);
+    this.listToggleButton.hidden = !this.selectedId;
   }
 
   private renderMembers() {
@@ -554,16 +614,23 @@ export class ScreenShareController {
   }
 
   private showEnded(reason: 'me' | 'remote' | null, who?: string) {
-    const watching = Boolean(this.selectedId) || Boolean(this.session?.stream);
-    this.endedState.hidden = !reason || watching;
-    this.emptyState.hidden = watching || Boolean(reason);
+    this.endedReason = reason;
+    const watchingSomeone = Boolean(this.selectedId);
+    this.endedState.hidden = !reason || watchingSomeone;
+    this.emptyState.hidden = watchingSomeone || Boolean(reason);
     if (!reason) return;
     this.endedTitle.textContent = reason === 'remote' ? 'Transmissão encerrada' : 'Você encerrou o compartilhamento';
     this.endedBody.textContent =
       reason === 'remote'
-        ? `Participante ${who?.slice(0, 8) ?? ''} parou de compartilhar a tela. Escolha outra transmissão na lista de participantes.`
+        ? `${who ? this.nameOf(who) : 'Participante'} parou de compartilhar a tela. Escolha outra transmissão na lista de participantes.`
         : 'Sua tela não está mais sendo transmitida para a sala. Os outros participantes continuam conectados.';
-    this.endedAction.textContent = reason === 'remote' ? 'Compartilhar minha tela' : 'Compartilhar novamente';
+    if (reason === 'remote') {
+      this.endedPrimary.textContent = 'Voltar para a lista';
+      this.endedSecondary.textContent = 'Compartilhar minha tela';
+    } else {
+      this.endedPrimary.textContent = 'Compartilhar novamente';
+      this.endedSecondary.textContent = 'Voltar para a lista';
+    }
   }
 
   // Tear down the outgoing publication for this session without touching the captured
@@ -662,6 +729,7 @@ export class ScreenShareController {
     if (!this.localStream) this.localViewer.setStream(null);
     this.setError(this.reconnectAttempts > 0 ? 'Reconectando à sala…' : '');
     this.showEnded(null);
+    this.hideJoinError();
     this.copyButton.innerHTML = `${PLUS_ICON_SMALL} Copiar convite`;
     let queue = Promise.resolve();
     const holder: { session?: Session } = {};
@@ -689,6 +757,7 @@ export class ScreenShareController {
       disposed: false,
       capture: 0,
       joined: false,
+      membersSeeded: false,
     };
     holder.session = session;
     this.session = session;
@@ -741,9 +810,25 @@ export class ScreenShareController {
   }
 
   private updateMembers(session: Session, next: Participant[]) {
-    for (const member of session.members) {
+    const previous = session.members;
+    for (const member of previous) {
       if (!next.some(peer => peer.peerId === member.peerId)) session.peers.removePeer(member.peerId);
     }
+    if (session.membersSeeded) {
+      for (const member of next) {
+        if (!previous.some(peer => peer.peerId === member.peerId)) {
+          if (member.peerId !== this.selfId) playSound('connect');
+        } else {
+          const before = previous.find(peer => peer.peerId === member.peerId);
+          if (before && !before.sharing && member.sharing) playSound('share-start');
+          if (before && before.sharing && !member.sharing) playSound('share-stop');
+        }
+      }
+      for (const member of previous) {
+        if (member.peerId !== this.selfId && !next.some(peer => peer.peerId === member.peerId)) playSound('disconnect');
+      }
+    }
+    session.membersSeeded = true;
     session.members = next;
     this.renderMembers();
   }
@@ -796,11 +881,12 @@ export class ScreenShareController {
           this.resumeWatch = false;
           this.renderMembers();
           this.renderControls();
-          this.showEnded('remote', message.sessionId);
+          this.showEnded('remote', message.peerId);
         }
         break;
       case 'error':
-        this.setError(message.message);
+        if (!session.joined) this.showJoinError(message.message);
+        else this.setError(message.message);
         break;
       default:
         if (session.joined) await session.peers.receive(message);
