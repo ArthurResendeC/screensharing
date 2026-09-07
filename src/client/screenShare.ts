@@ -156,6 +156,13 @@ export class ScreenShareController {
   private readonly localViewer: Viewer;
   private readonly remoteViewer: Viewer;
   private readonly debug: ConnectionDebug;
+  private readonly debugModal: HTMLElement;
+  private readonly onDebugModalKeydown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape' && !this.debugModal.hidden) {
+      this.debugModal.hidden = true;
+      this.debug.close();
+    }
+  };
 
   private readonly copyButton: HTMLButtonElement;
   private readonly listToggleButton: HTMLButtonElement;
@@ -230,13 +237,10 @@ export class ScreenShareController {
             <ul class="members" data-members></ul>
           </div>
 
-          <details class="debug-toggle" data-debug>
-            <summary>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="9 6 15 12 9 18"></polyline></svg>
-              Debug WebRTC
-            </summary>
-            <div class="debug-content" data-debug-content></div>
-          </details>
+          <button type="button" class="debug-toggle-btn" data-debug-open>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            Debug WebRTC
+          </button>
 
           <div class="settings-panel" data-settings hidden>
             <span class="label">Seu nome na sala</span>
@@ -364,17 +368,27 @@ export class ScreenShareController {
           />
           <button type="submit" class="btn btn-primary" data-alias-save>Entrar na sala</button>
         </form>
+      </div>
 
-        <div class="modal-overlay" data-join-error-modal hidden>
-          <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="join-error-title">
-            <div class="icon">${ENDED_ICON}</div>
-            <h2 id="join-error-title" data-join-error-title></h2>
-            <p data-join-error-body></p>
-            <div class="modal-actions">
-              <a class="btn btn-primary" href="/">Voltar ao início</a>
-              <button type="button" class="btn btn-outline" data-join-error-retry>Tentar novamente</button>
-            </div>
+      <div class="modal-overlay" data-join-error-modal hidden>
+        <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="join-error-title">
+          <div class="icon">${ENDED_ICON}</div>
+          <h2 id="join-error-title" data-join-error-title></h2>
+          <p data-join-error-body></p>
+          <div class="modal-actions">
+            <a class="btn btn-primary" href="/">Voltar ao início</a>
+            <button type="button" class="btn btn-outline" data-join-error-retry>Tentar novamente</button>
           </div>
+        </div>
+      </div>
+
+      <div class="modal-overlay" data-debug-modal hidden>
+        <div class="modal-card modal-card-wide" role="dialog" aria-modal="true" aria-labelledby="debug-modal-title">
+          <div class="modal-card-header">
+            <h2 id="debug-modal-title">Debug WebRTC</h2>
+            <button type="button" class="btn-icon" data-debug-close title="Fechar">${CLOSE_ICON}</button>
+          </div>
+          <div class="debug-content" data-debug-content></div>
         </div>
       </div>`;
     required<HTMLElement>(root, '[data-room]').textContent = roomId;
@@ -437,11 +451,12 @@ export class ScreenShareController {
       required(root, '[data-remote-empty]'),
       required(root, '[data-remote-play]'),
     );
+    this.debugModal = required(root, '[data-debug-modal]');
     this.debug = new ConnectionDebug(
-      required(root, '[data-debug]'),
       required(root, '[data-debug-content]'),
       () => this.session?.peers ?? null,
       () => this.socketState,
+      peerId => this.nameOf(peerId),
     );
     this.copyButton.addEventListener('click', () => void this.copyInvite());
     this.reconnectButton.addEventListener('click', () => {
@@ -486,6 +501,21 @@ export class ScreenShareController {
       () => void this.setCaptureQuality(this.captureSelect.value as CaptureQuality),
     );
     this.joinErrorRetry.addEventListener('click', () => this.startSession());
+    required<HTMLButtonElement>(root, '[data-debug-open]').addEventListener('click', () => {
+      this.debugModal.hidden = false;
+      this.debug.open();
+    });
+    required<HTMLButtonElement>(root, '[data-debug-close]').addEventListener('click', () => {
+      this.debugModal.hidden = true;
+      this.debug.close();
+    });
+    this.debugModal.addEventListener('click', event => {
+      if (event.target === this.debugModal) {
+        this.debugModal.hidden = true;
+        this.debug.close();
+      }
+    });
+    document.addEventListener('keydown', this.onDebugModalKeydown);
     // A backgrounded tab (common while you present your screen) has its reconnect
     // timers throttled or frozen, so also retry the moment the tab is looked at again
     // or the network returns.
@@ -1096,6 +1126,7 @@ export class ScreenShareController {
     try {
       session.peers.select(peerId, sessionId);
       session.channel!.send({ type: 'watch', targetPeerId: peerId, sessionId });
+      if (!resuming) playSound(peerId ? 'viewer-join' : 'viewer-leave');
     } catch (error) {
       session.peers.closeDirection('receive');
       session.selection = null;
@@ -1157,6 +1188,7 @@ export class ScreenShareController {
     document.removeEventListener('visibilitychange', this.wakeReconnect);
     window.removeEventListener('online', this.wakeReconnect);
     window.removeEventListener('pageshow', this.wakeReconnect);
+    document.removeEventListener('keydown', this.onDebugModalKeydown);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
     if (this.settingsTimer) clearInterval(this.settingsTimer);

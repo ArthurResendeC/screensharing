@@ -15,17 +15,23 @@ type Row = {
 export class ConnectionDebug {
   private timer?: ReturnType<typeof setTimeout>;
   private samples = new Map<RTCPeerConnection, Map<string, Sample>>();
+  private isOpen = false;
 
   constructor(
-    private readonly details: HTMLDetailsElement,
     private readonly content: HTMLElement,
     private readonly getPeers: () => Peers | null,
     private readonly getSocketState: () => string,
-  ) {
-    details.addEventListener('toggle', () => {
-      if (details.open) void this.poll();
-      else this.stop();
-    });
+    private readonly nameOf: (peerId: string) => string,
+  ) {}
+
+  open() {
+    this.isOpen = true;
+    void this.poll();
+  }
+
+  close() {
+    this.isOpen = false;
+    this.stop();
   }
 
   private async poll() {
@@ -54,7 +60,7 @@ export class ConnectionDebug {
       }
     }
     this.render(rows);
-    if (this.details.open) this.timer = setTimeout(() => void this.poll(), 2000);
+    if (this.isOpen) this.timer = setTimeout(() => void this.poll(), 2000);
   }
 
   private render(rows: Row[]) {
@@ -69,7 +75,7 @@ export class ConnectionDebug {
     for (const row of rows) {
       const section = document.createElement('section');
       const title = document.createElement('h3');
-      title.textContent = `${row.direction === 'send' ? 'Envio para' : 'Recebimento de'} ${row.peerId.slice(0, 8)}`;
+      title.textContent = `${row.direction === 'send' ? 'Envio para' : 'Recebimento de'} ${this.nameOf(row.peerId)}`;
       const state = document.createElement('pre');
       state.textContent = JSON.stringify(
         {
@@ -92,7 +98,7 @@ export class ConnectionDebug {
   }
 
   refresh() {
-    if (this.details.open) void this.poll();
+    if (this.isOpen) void this.poll();
   }
 
   private stop() {
