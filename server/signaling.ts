@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Server as HttpServer } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
-import { clientMessageSchema, type ServerMessage } from '../src/lib/signaling/messages';
+import { clientMessageSchema, type ServerMessage } from '../src/lib/signaling/messages.js';
 
 type Subscription = { publisherId: string; sessionId: string };
 type Client = {

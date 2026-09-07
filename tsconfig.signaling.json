@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": ".",
+    "outDir": "dist",
+    "noEmit": false,
+    "incremental": false,
+    "plugins": []
+  },
+  "include": ["server/**/*.ts", "src/lib/signaling/messages.ts"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -6,3 +6,5 @@ node_modules/
 certificates/
 playwright-report/
 test-results/
+dist/
+.railway/*-plan.json

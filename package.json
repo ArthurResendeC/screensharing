@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "tsx --test tests/*.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "build:signaling": "tsc -p tsconfig.signaling.json",
+    "start:signaling": "node dist/server/index.js"
   },
   "dependencies": {
     "next": "^16.0.0",
@@ -30,7 +32,11 @@
     "@types/ws": "^8.5.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.0.0",
+    "railway": "^3.11.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=22.16.0 <23"
   }
 }

@@ -21,7 +21,11 @@ pnpm signaling
 pnpm dev
 ```
 
-Abra http://localhost:3000. O frontend usa a porta 3000; signaling usa 3001. Se Next escolher outra porta por estar ocupada, ajuste `ALLOWED_ORIGINS` e reinicie o signaling. Para o frontend em produção: `pnpm build && pnpm start`; o signaling continua sendo um processo separado, iniciado por `pnpm signaling` (tsx é dependência de desenvolvimento; mantenha-a instalada nesse servidor).
+Abra http://localhost:3000. O frontend usa a porta 3000; signaling usa 3001. Se Next escolher outra porta por estar ocupada, ajuste `ALLOWED_ORIGINS` e reinicie o signaling. Para o frontend em produção: `pnpm build && pnpm start`; o signaling continua sendo um processo separado: compile com `pnpm build:signaling` e execute `pnpm start:signaling`. Em produção, configure `ALLOWED_ORIGINS`; `PORT` tem prioridade sobre `SIGNALING_PORT`.
+
+## Deploy na Railway
+
+Os serviços `web` e `signaling` e seus domínios já estão preparados no projeto pessoal `screensharing`. A infraestrutura está em `.railway/railway.ts`. Consulte [.railway/README.md](.railway/README.md) para executar o primeiro deploy com `railway up`, acompanhar logs e fazer atualizações. O push para o GitHub não dispara deploy automaticamente.
 
 ## Testar com duas abas
 
@@ -85,7 +89,7 @@ Alternativa para acesso pela internet: um reverse proxy com certificado TLS vál
 
 ### Compatibilidade e próxima implantação
 
-O protocolo mudou em relação à versão de host único. Reinicie o signaling e recarregue todas as abas juntas; clientes antigos não são compatíveis. Não há migração de banco. Os comandos e variáveis de ambiente permanecem iguais, sem novas dependências. O deploy será feito em uma etapa posterior, com HTTPS/WSS e decisão de TURN conforme as redes utilizadas.
+O protocolo mudou em relação à versão de host único. Reinicie o signaling e recarregue todas as abas juntas; clientes antigos não são compatíveis. Não há migração de banco. Os comandos e variáveis de ambiente permanecem iguais, sem novas dependências. A infraestrutura Railway para HTTPS/WSS está preparada; o upload da aplicação é feito explicitamente pela CLI. TURN segue opcional, conforme as redes utilizadas.
 
 ## Bitrate, codecs e capacidade
 
