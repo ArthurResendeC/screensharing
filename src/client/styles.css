@@ -639,6 +639,17 @@ ul.members {
   background: black;
   object-fit: contain;
 }
+.leave-stream-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(13, 17, 18, 0.55);
+  color: var(--ink);
+}
+.leave-stream-btn:hover {
+  background: var(--danger);
+  color: var(--accent-ink);
+}
 .video-empty {
   position: absolute;
   inset: 0;
@@ -830,6 +841,37 @@ ul.members {
   font-size: 12px;
   color: var(--muted);
   margin: 6px 0 0;
+}
+
+.watchers-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 0;
+}
+.watchers-stack {
+  display: flex;
+}
+.watcher-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--main);
+  margin-left: -8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+.watcher-avatar:first-child {
+  margin-left: 0;
+}
+.watchers-label {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 /* Name gate (shown on entry) and generic modal overlay */

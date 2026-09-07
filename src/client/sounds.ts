@@ -1,4 +1,4 @@
-type ToneName = 'connect' | 'disconnect' | 'share-start' | 'share-stop';
+type ToneName = 'connect' | 'disconnect' | 'share-start' | 'share-stop' | 'viewer-join' | 'viewer-leave';
 
 type Tone = {
   freqs: number[];
@@ -13,6 +13,8 @@ const TONES: Record<ToneName, Tone> = {
   disconnect: { freqs: [523.25, 392.0], dur: 0.1, gap: 0.08, type: 'sine' }, // C5 → G4, falling
   'share-start': { freqs: [880], dur: 0.12, gap: 0, type: 'triangle' },
   'share-stop': { freqs: [440, 330], dur: 0.11, gap: 0.02, type: 'triangle' },
+  'viewer-join': { freqs: [660, 880], dur: 0.055, gap: 0.03, type: 'sine' }, // a viewer starts watching my stream
+  'viewer-leave': { freqs: [660, 494], dur: 0.06, gap: 0.03, type: 'sine' }, // a viewer stops watching my stream
 };
 
 let ctx: AudioContext | null = null;
@@ -48,7 +50,7 @@ export function playSound(name: ToneName) {
     osc.type = tone.type;
     osc.frequency.setValueAtTime(freq, t);
     gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.22, t + 0.012);
+    gain.gain.linearRampToValueAtTime(0.4, t + 0.012);
     gain.gain.exponentialRampToValueAtTime(0.001, t + tone.dur);
     osc.connect(gain);
     gain.connect(audioCtx.destination);

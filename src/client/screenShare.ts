@@ -55,15 +55,22 @@ const CHECK_ICON =
   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 const GRID_ICON =
   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>';
+const CLOSE_ICON =
+  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"></line><line x1="19" y1="5" x2="5" y2="19"></line></svg>';
 
 const participantName = (id: string) => `Participante ${id.slice(0, 8)}`;
 const displayName = (participant: Participant) => participant.alias || participantName(participant.peerId);
 const escapeHtml = (value: string) =>
   value.replace(/[&<>"]/g, char => (char === '&' ? '&amp;' : char === '<' ? '&lt;' : char === '>' ? '&gt;' : '&quot;'));
-const initialsOf = (id: string) => id.slice(0, 2);
-const avatarColor = (id: string) => {
+const initialsOf = (name: string) => {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '??';
+  if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
+  return (words[0]![0]! + words[1]![0]!).toUpperCase();
+};
+const avatarColor = (name: string) => {
   let sum = 0;
-  for (let index = 0; index < id.length; index++) sum += id.charCodeAt(index);
+  for (let index = 0; index < name.length; index++) sum += name.charCodeAt(index);
   return AVATAR_COLORS[sum % AVATAR_COLORS.length];
 };
 
@@ -101,6 +108,7 @@ export class ScreenShareController {
   private settingsTimer?: ReturnType<typeof setInterval>;
   private settingsOpen = false;
   private endedReason: 'me' | 'remote' | null = null;
+  private knownWatcherIds = new Set<string>();
   private theme: Theme = loadTheme();
   private accent = ACCENTS[0]!.color;
   private readonly localViewer: Viewer;
@@ -109,6 +117,7 @@ export class ScreenShareController {
 
   private readonly copyButton: HTMLButtonElement;
   private readonly listToggleButton: HTMLButtonElement;
+  private readonly leaveStreamButton: HTMLButtonElement;
   private readonly participants: HTMLElement;
   private readonly identity: HTMLElement;
   private readonly identityId: HTMLElement;
@@ -130,7 +139,7 @@ export class ScreenShareController {
   private readonly themeLightButton: HTMLButtonElement;
   private readonly sharingInfo: HTMLElement;
   private readonly captureInfo: HTMLElement;
-  private readonly watchersInfo: HTMLElement;
+  private readonly watchersRow: HTMLElement;
   private readonly membersList: HTMLUListElement;
   private readonly headerTitle: HTMLElement;
   private readonly headerSub: HTMLElement;
@@ -262,6 +271,7 @@ export class ScreenShareController {
                 </div>
               </div>
               <video autoplay playsinline controls aria-label="Transmissão selecionada" data-remote-video></video>
+              <button type="button" class="btn-icon leave-stream-btn" data-leave-stream hidden title="Sair da transmissão">${CLOSE_ICON}</button>
             </div>
 
             <div class="action-bar">
@@ -274,7 +284,7 @@ export class ScreenShareController {
               <summary>Preview local (sem som)</summary>
               <video autoplay playsinline muted aria-label="Preview local"></video>
               <p class="info-line" data-capture-info></p>
-              <p class="info-line" data-watchers></p>
+              <div class="watchers-row" data-watchers></div>
               <p class="info-line" data-local-empty hidden></p>
               <button type="button" class="btn btn-outline" data-local-play hidden>Reproduzir preview</button>
             </details>
@@ -314,6 +324,7 @@ export class ScreenShareController {
     required<HTMLElement>(root, '[data-room]').textContent = roomId;
     this.copyButton = required(root, '[data-copy]');
     this.listToggleButton = required(root, '[data-list-toggle]');
+    this.leaveStreamButton = required(root, '[data-leave-stream]');
     this.participants = required(root, '[data-participants]');
     this.identity = required(root, '[data-identity]');
     this.identityId = required(root, '[data-identity-id]');
@@ -338,7 +349,7 @@ export class ScreenShareController {
     this.themeLightButton = required(root, '[data-theme-light]');
     this.sharingInfo = required(root, '[data-sharing-info]');
     this.captureInfo = required(root, '[data-capture-info]');
-    this.watchersInfo = required(root, '[data-watchers]');
+    this.watchersRow = required(root, '[data-watchers]');
     this.membersList = required(root, '[data-members]');
     this.headerTitle = required(root, '[data-header-title]');
     this.headerSub = required(root, '[data-header-sub]');
@@ -379,6 +390,7 @@ export class ScreenShareController {
       this.startSession();
     });
     this.listToggleButton.addEventListener('click', () => this.watch(null));
+    this.leaveStreamButton.addEventListener('click', () => this.watch(null));
     this.shareButton.addEventListener('click', () => void this.share());
     this.footerShareButton.addEventListener('click', () => void this.toggleShare());
     this.stopShareButton.addEventListener('click', () => {
@@ -527,6 +539,7 @@ export class ScreenShareController {
         : 'nenhuma tela ativa';
     this.emptyState.hidden = Boolean(this.selectedId);
     this.listToggleButton.hidden = !this.selectedId;
+    this.leaveStreamButton.hidden = !this.selectedId;
   }
 
   private renderMembers() {
@@ -540,8 +553,8 @@ export class ScreenShareController {
     this.aliasInput.placeholder = fallbackName;
     this.renameInput.placeholder = fallbackName;
     const avatar = required<HTMLElement>(this.root, '[data-identity-avatar]');
-    avatar.textContent = this.selfId ? initialsOf(this.selfId) : '';
-    avatar.style.background = this.selfId ? avatarColor(this.selfId) : '';
+    avatar.textContent = this.selfId ? initialsOf(this.nameOf(this.selfId)) : '';
+    avatar.style.background = this.selfId ? avatarColor(this.nameOf(this.selfId)) : '';
     this.membersList.replaceChildren();
     for (const member of members) {
       const isSelf = member.peerId === this.selfId;
@@ -549,12 +562,13 @@ export class ScreenShareController {
       const canWatch = member.sharing && !isSelf;
       const item = document.createElement('li');
       item.className = `member${canWatch ? ' is-live' : ''}${isSelected ? ' is-selected' : ''}`;
+      const memberName = displayName(member);
       item.innerHTML = `
-        <div class="avatar" style="background:${avatarColor(member.peerId)}">${initialsOf(member.peerId)}
+        <div class="avatar" style="background:${avatarColor(memberName)}">${initialsOf(memberName)}
           <div class="dot${member.sharing ? ' is-live' : ''}"></div>
         </div>
         <div class="info">
-          <span class="name">${escapeHtml(displayName(member))}</span>
+          <span class="name">${escapeHtml(memberName)}</span>
           <span class="status">${member.sharing ? 'Transmitindo' : 'Sem transmissão'}</span>
         </div>`;
       if (canWatch) {
@@ -590,7 +604,7 @@ export class ScreenShareController {
       tile.className = `screen-tile${isSelected ? ' is-selected' : ''}`;
       tile.disabled = !this.connected();
       tile.innerHTML = `
-        <div class="screen-tile-thumb" style="background:${avatarColor(member.peerId)}22">
+        <div class="screen-tile-thumb" style="background:${avatarColor(displayName(member))}22">
           <div class="screen-tile-overlay">
             ${
               isSelected
@@ -612,8 +626,33 @@ export class ScreenShareController {
     const entries = [...peers.peers.values()];
     const state = entries.find(entry => entry.direction === 'receive')?.pc.connectionState ?? 'aguardando';
     this.connection.textContent = `Conexão: ${state}${state === 'failed' ? ' — tente reconectar à transmissão; esta rede pode exigir TURN.' : ''}`;
-    this.watchersInfo.textContent = `Assistindo à sua tela: ${entries.filter(entry => entry.direction === 'send').length}`;
+    const watcherIds = new Set(entries.filter(entry => entry.direction === 'send').map(entry => entry.peerId));
+    for (const peerId of watcherIds) if (!this.knownWatcherIds.has(peerId)) playSound('viewer-join');
+    for (const peerId of this.knownWatcherIds) if (!watcherIds.has(peerId)) playSound('viewer-leave');
+    this.knownWatcherIds = watcherIds;
+    this.renderWatchers([...watcherIds]);
     this.debug.refresh();
+  }
+
+  // Discord-style facepile of who's currently watching my stream.
+  private renderWatchers(watcherIds: string[]) {
+    this.watchersRow.replaceChildren();
+    const label = document.createElement('span');
+    label.className = 'watchers-label';
+    label.textContent =
+      watcherIds.length === 0 ? 'Ninguém assistindo ainda' : `Assistindo à sua tela (${watcherIds.length})`;
+    const stack = document.createElement('div');
+    stack.className = 'watchers-stack';
+    for (const peerId of watcherIds) {
+      const watcherName = this.nameOf(peerId);
+      const avatar = document.createElement('div');
+      avatar.className = 'watcher-avatar';
+      avatar.title = watcherName;
+      avatar.style.background = avatarColor(watcherName);
+      avatar.textContent = initialsOf(watcherName);
+      stack.append(avatar);
+    }
+    this.watchersRow.append(stack, label);
   }
 
   private showEnded(reason: 'me' | 'remote' | null, who?: string) {
@@ -733,6 +772,7 @@ export class ScreenShareController {
   private startSession() {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
+    this.knownWatcherIds = new Set();
     if (this.session) this.disposeSession(this.session);
     this.socketState = 'connecting';
     this.selfId = '';
