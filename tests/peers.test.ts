@@ -26,8 +26,12 @@ class FakeConnection {
     expect(this.remoteDescription).not.toBeNull();
     this.added.push(candidate);
   }
-  addTrack() {}
-  getTransceivers() {
+  addTrack(_track?: { kind: string }) {}
+  getTransceivers(): Array<{
+    direction: string;
+    sender: { track: { kind: string } | null };
+    setCodecPreferences?: (codecs: RTCRtpCodec[]) => void;
+  }> {
     return [];
   }
   getSenders() {
@@ -131,5 +135,63 @@ test('selection change while remote SDP is pending cannot emit an old answer', a
     peers.closeAllPeers();
   } finally {
     globalThis.RTCPeerConnection = original;
+  }
+});
+
+test('sets the preferred video codec before creating an offer', async () => {
+  const originalConnection = globalThis.RTCPeerConnection;
+  const originalSender = globalThis.RTCRtpSender;
+  const events: string[] = [];
+  class CodecConnection extends FakeConnection {
+    private readonly transceiver = {
+      direction: 'sendrecv',
+      sender: { track: null as { kind: string } | null },
+      setCodecPreferences: (codecs: RTCRtpCodec[]) => {
+        events.push(`codec:${codecs[0]?.mimeType}`);
+      },
+    };
+    addTrack(track?: { kind: string }) {
+      this.transceiver.sender.track = track ?? null;
+    }
+    getTransceivers() {
+      return [this.transceiver];
+    }
+    async createOffer() {
+      events.push('offer');
+      return super.createOffer();
+    }
+  }
+  globalThis.RTCPeerConnection = CodecConnection as unknown as typeof RTCPeerConnection;
+  globalThis.RTCRtpSender = {
+    getCapabilities: () => ({
+      codecs: [
+        { mimeType: 'video/VP8', clockRate: 90_000 },
+        { mimeType: 'video/H264', clockRate: 90_000 },
+        { mimeType: 'video/rtx', clockRate: 90_000, sdpFmtpLine: 'apt=96' },
+      ],
+      headerExtensions: [],
+    }),
+  } as unknown as typeof RTCRtpSender;
+
+  try {
+    const peers = new Peers(
+      () => {},
+      () => {},
+      () => {},
+      error => {
+        throw error;
+      },
+    );
+    await peers.offer(
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      { getTracks: () => [{ kind: 'video' }] } as unknown as MediaStream,
+      'h264',
+    );
+    expect(events).toEqual(['codec:video/H264', 'offer']);
+    peers.closeAllPeers();
+  } finally {
+    globalThis.RTCPeerConnection = originalConnection;
+    globalThis.RTCRtpSender = originalSender;
   }
 });

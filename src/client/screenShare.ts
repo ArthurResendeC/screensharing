@@ -1,5 +1,10 @@
 import { connectSignaling } from '../lib/signaling/client';
 import { ALIAS_MAX_LENGTH, type Participant, type ServerMessage } from '../lib/signaling/messages';
+import {
+  normalizeVideoCodecPreference,
+  type VideoCodecPreference,
+  VIDEO_CODEC_PREFERENCES,
+} from '../lib/webrtc/codecs';
 import { Peers } from '../lib/webrtc/peers';
 import { setVideoDegradation, type VideoDegradation } from '../lib/webrtc/rtcConfiguration';
 import { displayName, participantName } from './participantPresentation';
@@ -18,6 +23,7 @@ type Session = {
   capture: number;
   joined: boolean;
   membersSeeded: boolean;
+  codecPreference: VideoCodecPreference;
 };
 
 export const ACCENTS = [
@@ -31,6 +37,7 @@ const ALIAS_STORAGE_KEY = 'screen-share:alias';
 const LAST_ROOM_STORAGE_KEY = 'screen-share:last-room';
 const DEGRADATION_STORAGE_KEY = 'screen-share:degradation';
 const CAPTURE_STORAGE_KEY = 'screen-share:capture';
+const CODEC_STORAGE_KEY = 'screen-share:codec';
 const DEGRADATION_CHOICES = ['framerate', 'balanced', 'resolution'] as const;
 export type CaptureQuality = 'fluid' | 'balanced' | 'sharp';
 const CAPTURE_CHOICES = ['fluid', 'balanced', 'sharp'] as const;
@@ -95,6 +102,7 @@ export type ScreenShareState = {
   accent: string;
   degradation: VideoDegradation;
   captureQuality: CaptureQuality;
+  codecPreference: VideoCodecPreference;
   inviteCopied: boolean;
 };
 
@@ -114,6 +122,7 @@ export class ScreenShareController {
   private started = false;
   private settingsTimer?: ReturnType<typeof setInterval>;
   private knownWatcherIds = new Set<string>();
+  private activeCodecPreference: VideoCodecPreference | null = null;
   private state: ScreenShareState = {
     socketState: 'connecting',
     selfId: '',
@@ -135,6 +144,7 @@ export class ScreenShareController {
     accent: ACCENTS[0].color,
     degradation: storedChoice(DEGRADATION_STORAGE_KEY, DEGRADATION_CHOICES, 'framerate'),
     captureQuality: storedChoice(CAPTURE_STORAGE_KEY, CAPTURE_CHOICES, 'fluid'),
+    codecPreference: normalizeVideoCodecPreference(storedChoice(CODEC_STORAGE_KEY, VIDEO_CODEC_PREFERENCES, 'auto')),
     inviteCopied: false,
   };
 
@@ -223,6 +233,16 @@ export class ScreenShareController {
         'O navegador não reconfigurou a captura ao vivo; a nova qualidade vale no próximo compartilhamento.',
       );
     }
+  }
+
+  setCodecPreference(value: VideoCodecPreference) {
+    const codecPreference = normalizeVideoCodecPreference(value);
+    try {
+      localStorage.setItem(CODEC_STORAGE_KEY, codecPreference);
+    } catch {
+      // Preference remains valid for this tab.
+    }
+    this.update({ codecPreference });
   }
 
   reconnect() {
@@ -348,6 +368,7 @@ export class ScreenShareController {
       track.stop();
     });
     this.localStream = null;
+    this.activeCodecPreference = null;
     this.update({ localStream: null });
   }
 
@@ -374,6 +395,8 @@ export class ScreenShareController {
     screenTrack.contentHint = 'motion';
     this.localStream = captured;
     session.stream = captured;
+    this.activeCodecPreference ??= this.state.codecPreference;
+    session.codecPreference = this.activeCodecPreference;
     screenTrack.onended = () => {
       if (this.session) this.stopSessionSharing(this.session, true);
       else this.stopCapture();
@@ -490,6 +513,7 @@ export class ScreenShareController {
       capture: 0,
       joined: false,
       membersSeeded: false,
+      codecPreference: 'auto',
     };
     holder.session = session;
     this.session = session;
@@ -576,7 +600,8 @@ export class ScreenShareController {
         }
         break;
       case 'subscriber-joined':
-        if (session.stream) void session.peers.offer(message.peerId, message.sessionId, session.stream);
+        if (session.stream)
+          void session.peers.offer(message.peerId, message.sessionId, session.stream, session.codecPreference);
         break;
       case 'subscription-ended':
         session.peers.removeSession(message.sessionId);

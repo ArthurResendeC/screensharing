@@ -81,7 +81,7 @@ O servidor só encaminha offer, answer e ICE quando remetente, destino, sala, di
 
 Não dá para fixar resolução, FPS e bitrate ao mesmo tempo — sob carga um deles cede. As Configurações expõem essa escolha ("Sob carga, priorizar": fluidez / equilíbrio / nitidez → `maintain-framerate` / `balanced` / `maintain-resolution`, padrão fluidez) e a qualidade da captura (1080p·60 / 1440p·30 / 1440p·60, padrão 1080p·60). As duas ficam no `localStorage` e valem para o próximo compartilhamento; a preferência de degradação e a taxa de quadros também se aplicam a uma transmissão em andamento.
 
-A negociação padrão escolhe o codec. **Debug WebRTC** exibe capacidades locais, estados de conexão e estatísticas de RTP a cada dois segundos somente enquanto a seção está aberta.
+As Configurações permitem preferir Automático, VP8, VP9, H.264 ou AV1 no próximo compartilhamento. Opções não suportadas pelo navegador ficam desabilitadas. A preferência é aplicada antes de cada offer com `RTCRtpTransceiver.setCodecPreferences()` e mantém os demais codecs como fallback, portanto o codec efetivo ainda pode variar por espectador. **Debug WebRTC** exibe capacidades locais, estados de conexão e estatísticas de RTP a cada dois segundos somente enquanto a seção está aberta.
 
 Em mesh, o custo de vídeo fica principalmente na máquina de quem transmite. Quatro espectadores podem exigir até cerca de 60 Mbps de upload mais áudio e overhead, além de múltiplos encoders. Railway recebe apenas mensagens pequenas de signaling e os arquivos do frontend.
 

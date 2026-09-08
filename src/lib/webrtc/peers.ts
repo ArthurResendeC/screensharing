@@ -1,4 +1,5 @@
 import type { ClientMessage, PeerSignal } from '../signaling/messages';
+import { setVideoCodecPreference, type VideoCodecPreference } from './codecs';
 import { MAX_VIDEO_BITRATE, VIDEO_DEGRADATION_PREFERENCE, rtcConfiguration } from './rtcConfiguration';
 import { tuneVideoBitrate } from './sdp';
 
@@ -60,12 +61,18 @@ export class Peers {
     // Create before sending watch: ICE can precede the offer, but never the selection.
     if (peerId) this.createPeerConnection(peerId, sessionId, 'receive');
   }
-  async offer(peerId: string, sessionId: string, stream: MediaStream) {
+  async offer(peerId: string, sessionId: string, stream: MediaStream, codecPreference: VideoCodecPreference = 'auto') {
     const entry = this.createPeerConnection(peerId, sessionId, 'send');
     try {
       for (const track of stream.getTracks()) entry.pc.addTrack(track, stream);
       // Every subscription has exactly one offerer, including reciprocal viewing.
-      for (const transceiver of entry.pc.getTransceivers()) transceiver.direction = 'sendonly';
+      for (const transceiver of entry.pc.getTransceivers()) {
+        transceiver.direction = 'sendonly';
+        if (transceiver.sender.track?.kind === 'video' && !setVideoCodecPreference(transceiver, codecPreference))
+          this.onError(
+            new Error('O navegador não aplicou o codec preferido; a transmissão usará a negociação automática.'),
+          );
+      }
       const offer = await entry.pc.createOffer();
       if (!this.current(entry)) return;
       if (offer.sdp) offer.sdp = tuneVideoBitrate(offer.sdp);

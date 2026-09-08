@@ -1,11 +1,33 @@
 import { useState, type CSSProperties } from 'react';
 import { ALIAS_MAX_LENGTH } from '../../lib/signaling/messages';
+import { isVideoCodecSupported, type VideoCodecPreference, VIDEO_CODEC_PREFERENCES } from '../../lib/webrtc/codecs';
 import { ACCENTS, type ScreenShareController, type ScreenShareState } from '../screenShare';
 import { avatarColor, initialsOf, participantName } from '../participantPresentation';
 import { ParticipantList } from './roomParticipants';
 import { ArrowLeftIcon, GearIcon, LeaveIcon, ScreenIcon } from './icons';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 type Props = { roomId: string; state: ScreenShareState; controller: ScreenShareController; onDebug: () => void };
+
+const CODEC_LABELS: Record<VideoCodecPreference, string> = {
+  auto: 'Automático — recomendado',
+  vp8: 'VP8',
+  vp9: 'VP9',
+  h264: 'H.264',
+  av1: 'AV1',
+};
+
+const DEGRADATION_ITEMS: Array<{ label: string; value: ScreenShareState['degradation'] }> = [
+  { value: 'framerate', label: 'Fluidez — FPS estável, imagem pode borrar' },
+  { value: 'balanced', label: 'Equilíbrio entre FPS e nitidez' },
+  { value: 'resolution', label: 'Nitidez — imagem nítida, FPS pode cair' },
+];
+
+const CAPTURE_ITEMS: Array<{ label: string; value: ScreenShareState['captureQuality'] }> = [
+  { value: 'fluid', label: 'Fluida — 1080p · 60 FPS' },
+  { value: 'balanced', label: 'Equilibrada — 1440p · 30 FPS' },
+  { value: 'sharp', label: 'Nítida — 1440p · 60 FPS' },
+];
 
 export function RoomSidebar({ roomId, state, controller, onDebug }: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -105,31 +127,64 @@ export function RoomSidebar({ roomId, state, controller, onDebug }: Props) {
               ))}
             </div>
             <span className="label">Sob carga, priorizar</span>
-            <select
-              className="settings-select"
-              aria-label="O que priorizar sob carga de CPU ou rede"
+            <Select
+              items={DEGRADATION_ITEMS}
               value={state.degradation}
-              onChange={event =>
-                controller.setDegradation(event.currentTarget.value as ScreenShareState['degradation'])
-              }
+              onValueChange={value => value && controller.setDegradation(value)}
             >
-              <option value="framerate">Fluidez — FPS estável, imagem pode borrar</option>
-              <option value="balanced">Equilíbrio entre FPS e nitidez</option>
-              <option value="resolution">Nitidez — imagem nítida, FPS pode cair</option>
-            </select>
+              <SelectTrigger aria-label="O que priorizar sob carga de CPU ou rede">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {DEGRADATION_ITEMS.map(item => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
             <span className="label">Qualidade da captura</span>
-            <select
-              className="settings-select"
-              aria-label="Resolução e taxa de quadros da captura"
+            <Select
+              items={CAPTURE_ITEMS}
               value={state.captureQuality}
-              onChange={event =>
-                void controller.setCaptureQuality(event.currentTarget.value as ScreenShareState['captureQuality'])
-              }
+              onValueChange={value => value && void controller.setCaptureQuality(value)}
             >
-              <option value="fluid">Fluida — 1080p · 60 FPS</option>
-              <option value="balanced">Equilibrada — 1440p · 30 FPS</option>
-              <option value="sharp">Nítida — 1440p · 60 FPS</option>
-            </select>
+              <SelectTrigger aria-label="Resolução e taxa de quadros da captura">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {CAPTURE_ITEMS.map(item => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <span className="label">Codec de vídeo</span>
+            <Select
+              items={VIDEO_CODEC_PREFERENCES.map(value => ({ label: CODEC_LABELS[value], value }))}
+              value={state.codecPreference}
+              onValueChange={value => value && controller.setCodecPreference(value)}
+            >
+              <SelectTrigger aria-label="Codec preferido para o próximo compartilhamento">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {VIDEO_CODEC_PREFERENCES.map(codec => (
+                    <SelectItem key={codec} value={codec} disabled={!isVideoCodecSupported(codec)}>
+                      {CODEC_LABELS[codec]}
+                      {isVideoCodecSupported(codec) ? '' : ' — indisponível'}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <span className="settings-hint">A alteração vale no próximo compartilhamento.</span>
           </div>
         )}
         <div className="sidebar-footer">

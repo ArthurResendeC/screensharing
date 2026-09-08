@@ -16,6 +16,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@base-ui/react": "^1.8.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zod": "^4.0.0"
