@@ -413,7 +413,7 @@ export class ScreenShareController {
   };
 
   private scheduleReconnect() {
-    if (this.disposed || this.reconnectTimer) return;
+    if (this.disposed || this.reconnectTimer || navigator.onLine === false) return;
     const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 15_000);
     this.reconnectAttempts++;
     this.reconnectTimer = setTimeout(() => {
@@ -427,6 +427,26 @@ export class ScreenShareController {
     this.reconnectTimer = undefined;
     this.knownWatcherIds = new Set();
     if (this.session) this.disposeSession(this.session);
+    if (navigator.onLine === false) {
+      this.session = null;
+      this.update({
+        socketState: 'disconnected',
+        selfId: '',
+        members: [],
+        selectedId: null,
+        capturing: false,
+        sharing: false,
+        remoteStream: null,
+        connectionState: 'aguardando',
+        watcherIds: [],
+        error: 'Você está offline. A conexão será retomada quando a internet voltar.',
+        joinError: '',
+        endedReason: null,
+        endedPeerId: null,
+        inviteCopied: false,
+      });
+      return;
+    }
     this.update({
       socketState: 'connecting',
       selfId: '',

@@ -55,6 +55,23 @@ a:hover {
 [hidden] {
   display: none !important;
 }
+.connectivity-banner {
+  position: fixed;
+  z-index: 50;
+  top: 12px;
+  left: 50%;
+  width: min(calc(100% - 24px), 680px);
+  padding: 10px 14px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(224, 121, 107, 0.4);
+  border-radius: 10px;
+  background: var(--card-2);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
 code,
 .mono {
   font-family: 'JetBrains Mono', ui-monospace, monospace;

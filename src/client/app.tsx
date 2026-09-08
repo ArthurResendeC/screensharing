@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { z } from 'zod';
 import { roomIdSchema } from '../lib/signaling/messages';
@@ -137,11 +137,44 @@ function InvalidRoom() {
   );
 }
 
+function useOnlineStatus() {
+  const [online, setOnline] = useState(() => navigator.onLine);
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+  return online;
+}
+
 function App() {
+  const online = useOnlineStatus();
   const roomId = roomFromPath();
-  if (roomId === null) return <Lobby />;
-  if (!roomIdSchema.safeParse(roomId).success) return <InvalidRoom />;
-  return <Room roomId={roomId} />;
+  const page =
+    roomId === null ? <Lobby /> : roomIdSchema.safeParse(roomId).success ? <Room roomId={roomId} /> : <InvalidRoom />;
+  return (
+    <Fragment>
+      {!online && (
+        <div className="connectivity-banner" role="status" aria-live="polite">
+          Você está offline. Salas e transmissões exigem internet; a conexão será retomada automaticamente.
+        </div>
+      )}
+      {page}
+    </Fragment>
+  );
+}
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    await navigator.serviceWorker.register('/service-worker.js', { scope: '/', updateViaCache: 'none' });
+  } catch {
+    // A aplicação continua funcional em navegadores sem suporte ou com o recurso bloqueado.
+  }
 }
 
 async function bootstrap() {
@@ -162,6 +195,7 @@ async function bootstrap() {
   const root = document.querySelector<HTMLElement>('#app');
   if (!root) throw new Error('Contêiner da aplicação ausente.');
   createRoot(root).render(<App />);
+  void registerServiceWorker();
 }
 
 void bootstrap();

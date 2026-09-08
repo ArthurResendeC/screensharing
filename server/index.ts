@@ -1,4 +1,9 @@
 import homepage from '../src/client/index.html';
+import icon192 from '../src/client/assets/icon-192.png' with { type: 'file' };
+import icon512 from '../src/client/assets/icon-512.png' with { type: 'file' };
+import maskableIcon512 from '../src/client/assets/icon-maskable-512.png' with { type: 'file' };
+import manifest from '../src/client/manifest.webmanifest' with { type: 'text' };
+import serviceWorker from '../src/client/service-worker.js' with { type: 'text' };
 import { SignalingHub, type Client, type SignalingSocket } from './signaling';
 
 const port = Number(process.env.PORT ?? 3000);
@@ -11,6 +16,7 @@ const configuredOrigins = new Set(
     .filter(Boolean),
 );
 const hub = new SignalingHub();
+const iconHeaders = { 'cache-control': 'public, max-age=604800' };
 
 function originAllowed(request: Request) {
   const origin = request.headers.get('origin');
@@ -31,6 +37,15 @@ const server = Bun.serve<Client>({
   routes: {
     '/': homepage,
     '/room/:roomId': homepage,
+    '/manifest.webmanifest': new Response(manifest, {
+      headers: { 'content-type': 'application/manifest+json', 'cache-control': 'no-cache' },
+    }),
+    '/service-worker.js': new Response(serviceWorker, {
+      headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache' },
+    }),
+    '/icons/icon-192.png': new Response(Bun.file(icon192), { headers: iconHeaders }),
+    '/icons/icon-512.png': new Response(Bun.file(icon512), { headers: iconHeaders }),
+    '/icons/icon-maskable-512.png': new Response(Bun.file(maskableIcon512), { headers: iconHeaders }),
     '/health': new Response('OK\n', {
       headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
     }),

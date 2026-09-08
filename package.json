@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "bun --watch server/index.ts",
     "build": "bun build --target=bun --production --outdir=dist server/index.ts",
+    "icons:pwa": "bun run scripts/generate-pwa-icons.ts",
     "start": "bun --cwd dist index.js",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",

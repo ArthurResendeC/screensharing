@@ -12,6 +12,9 @@ export function loadTheme(): Theme {
 
 export function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
+  document
+    .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+    ?.setAttribute('content', theme === 'dark' ? '#16181b' : '#e3e6e9');
   try {
     localStorage.setItem(STORAGE_KEY, theme);
   } catch {

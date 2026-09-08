@@ -39,6 +39,12 @@ O processo deve iniciar a partir da raiz; o script `start` entra em `dist` para 
 5. O preview local permanece sem som. O vídeo remoto não é silenciado; se o navegador bloquear autoplay com áudio, clique em **Reproduzir vídeo e áudio**.
 6. O botão nativo de parar captura, **Parar compartilhamento**, fechar a aba ou perder o signaling encerram tracks e conexões relacionadas.
 
+## Instalação como aplicativo
+
+Em navegadores compatíveis, use a opção **Instalar ReShare** da barra de endereço ou do menu do navegador. A versão
+instalada abre em uma janela própria e mantém a interface disponível depois da primeira visita. Salas, signaling e
+transmissões continuam exigindo internet; quando a conexão volta, uma sala aberta tenta se reconectar automaticamente.
+
 A captura solicita 2560 × 1440 a 60 FPS como valores ideais. A interface mostra largura, altura, FPS e presença de áudio realmente entregues por `getSettings()`. Áudio de sistema depende do navegador, sistema operacional e tipo de superfície selecionada.
 
 ## Testes
