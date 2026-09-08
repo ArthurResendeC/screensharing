@@ -172,7 +172,7 @@ function VideoMetrics({ video }: { video: VideoStats }) {
       <strong>
         {percent(video.packetLossPercent)} / {video.packetsLost ?? 'indisponível'} pacotes
       </strong>
-      <span>RTT / jitter</span>
+      <span>RTT (latência) / jitter</span>
       <strong>
         {value(video.roundTripTimeMs, ' ms', 1)} / {value(video.jitterMs, ' ms', 1)}
       </strong>
