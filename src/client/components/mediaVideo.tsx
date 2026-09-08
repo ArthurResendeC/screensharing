@@ -1,5 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { CloseIcon, FullscreenIcon, PipIcon, VolumeIcon, VolumeMutedIcon } from './icons';
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { CloseIcon, FullscreenIcon, PipIcon, VolumeIcon, VolumeMutedIcon, ZoomInIcon, ZoomOutIcon } from './icons';
+
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 3;
+const ZOOM_STEP = 0.25;
 
 type Props = { stream: MediaStream | null; label: string } & (
   | { local: true; onStopWatching?: never }
@@ -12,7 +16,9 @@ type PictureInPictureMediaSession = {
 
 export function MediaVideo({ stream, local = false, label, onStopWatching }: Props) {
   const player = useRef<HTMLDivElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
+  const drag = useRef<{ pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null>(null);
   const [blocked, setBlocked] = useState(false);
   const [muted, setMuted] = useState(local);
   const [pipActive, setPipActive] = useState(false);
@@ -20,6 +26,9 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
   const [pipSupported, setPipSupported] = useState(false);
   const [fullscreenSupported, setFullscreenSupported] = useState(false);
   const [controlError, setControlError] = useState('');
+  const [zoom, setZoom] = useState(MIN_ZOOM);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
 
   const play = useCallback(async () => {
     try {
@@ -45,6 +54,8 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
     element.srcObject = stream;
     setBlocked(false);
     setControlError('');
+    setZoom(MIN_ZOOM);
+    setOffset({ x: 0, y: 0 });
     if (stream) void play();
     else leavePresentationModes();
     return () => {
@@ -105,6 +116,59 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
     element.muted = !element.muted;
   };
 
+  const constrainOffset = useCallback((x: number, y: number, scale: number) => {
+    const element = viewport.current;
+    if (!element || scale <= MIN_ZOOM) return { x: 0, y: 0 };
+    const maxX = (element.clientWidth * (scale - 1)) / 2;
+    const maxY = (element.clientHeight * (scale - 1)) / 2;
+    return {
+      x: Math.max(-maxX, Math.min(maxX, x)),
+      y: Math.max(-maxY, Math.min(maxY, y)),
+    };
+  }, []);
+
+  const changeZoom = (change: number) => {
+    setZoom(current => {
+      const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, current + change));
+      setOffset(currentOffset => constrainOffset(currentOffset.x, currentOffset.y, next));
+      return next;
+    });
+  };
+
+  const resetZoom = () => {
+    setZoom(MIN_ZOOM);
+    setOffset({ x: 0, y: 0 });
+  };
+
+  const startDragging = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (zoom <= MIN_ZOOM || event.button !== 0) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      offsetX: offset.x,
+      offsetY: offset.y,
+    };
+    setDragging(true);
+  };
+
+  const moveDragging = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const current = drag.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    setOffset(
+      constrainOffset(current.offsetX + event.clientX - current.x, current.offsetY + event.clientY - current.y, zoom),
+    );
+  };
+
+  const stopDragging = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (drag.current?.pointerId !== event.pointerId) return;
+    drag.current = null;
+    setDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
   const togglePip = async () => {
     const element = video.current;
     if (!element) return;
@@ -142,8 +206,29 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
   };
 
   return (
-    <div ref={player} className={`media-player${local ? ' is-local' : ''}`} hidden={!stream}>
-      <video ref={video} autoPlay playsInline muted={muted} aria-label={label} />
+    <div
+      ref={player}
+      className={`media-player${local ? ' is-local' : ''}${zoom > MIN_ZOOM ? ' is-zoomed' : ''}${dragging ? ' is-dragging' : ''}`}
+      hidden={!stream}
+    >
+      <div
+        ref={viewport}
+        className="media-viewport"
+        onPointerDown={startDragging}
+        onPointerMove={moveDragging}
+        onPointerUp={stopDragging}
+        onPointerCancel={stopDragging}
+        onDoubleClick={resetZoom}
+      >
+        <video
+          ref={video}
+          autoPlay
+          playsInline
+          muted={muted}
+          aria-label={label}
+          style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }}
+        />
+      </div>
       {blocked && (
         <button type="button" className="btn btn-outline media-playback-unlock" onClick={() => void play()}>
           {local ? 'Reproduzir preview' : 'Reproduzir vídeo e áudio'}
@@ -155,6 +240,38 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
             <CloseIcon /> <span>Deixar de assistir</span>
           </button>
           <div className="media-control-group">
+            <div className="media-zoom-controls" role="group" aria-label="Zoom do vídeo">
+              <button
+                type="button"
+                className="media-control media-control-icon"
+                title="Diminuir zoom"
+                aria-label="Diminuir zoom"
+                disabled={zoom <= MIN_ZOOM}
+                onClick={() => changeZoom(-ZOOM_STEP)}
+              >
+                <ZoomOutIcon />
+              </button>
+              <button
+                type="button"
+                className="media-control media-zoom-value"
+                title="Redefinir zoom"
+                aria-label={`Redefinir zoom, atualmente ${Math.round(zoom * 100)}%`}
+                disabled={zoom <= MIN_ZOOM}
+                onClick={resetZoom}
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              <button
+                type="button"
+                className="media-control media-control-icon"
+                title="Aumentar zoom"
+                aria-label="Aumentar zoom"
+                disabled={zoom >= MAX_ZOOM}
+                onClick={() => changeZoom(ZOOM_STEP)}
+              >
+                <ZoomInIcon />
+              </button>
+            </div>
             <button
               type="button"
               className={`media-control media-control-icon${muted ? ' is-active' : ''}`}

@@ -233,6 +233,12 @@ test('five participants: simultaneous publishing, reciprocal watching and one re
   await Promise.all([choose(a, bName), choose(b, aName)]);
   await playing(a, 'blue', 0);
   await playing(b, 'red', 1);
+  await b.getByRole('button', { name: 'Aumentar zoom', exact: true }).click();
+  await expect(b.getByRole('button', { name: 'Redefinir zoom, atualmente 125%', exact: true })).toBeEnabled();
+  expect(await remoteVideo(b).evaluate((video: HTMLVideoElement) => video.style.transform)).toContain('scale(1.25)');
+  await b.getByRole('button', { name: 'Redefinir zoom, atualmente 125%', exact: true }).click();
+  await expect(b.getByRole('button', { name: 'Diminuir zoom', exact: true })).toBeDisabled();
+  expect(await remoteVideo(b).evaluate((video: HTMLVideoElement) => video.style.transform)).toContain('scale(1)');
   const muteButton = b.getByRole('button', { name: 'Desligar áudio', exact: true });
   await muteButton.click();
   await expect(b.getByRole('button', { name: 'Ligar áudio', exact: true })).toHaveAttribute('aria-pressed', 'true');
