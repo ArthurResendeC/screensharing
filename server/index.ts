@@ -78,7 +78,7 @@ const server = Bun.serve<Client>({
 });
 
 const heartbeat = setInterval(() => hub.heartbeat(), 15_000);
-console.log(`WebRTC Screen Share listening on ${server.url}`);
+console.log(`ReShare listening on ${server.url}`);
 
 function shutdown() {
   clearInterval(heartbeat);

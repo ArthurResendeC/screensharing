@@ -187,6 +187,9 @@ code,
   flex-direction: column;
   gap: 14px;
 }
+.room-ended-actions {
+  margin-top: 2px;
+}
 
 /* App shell */
 .shell {

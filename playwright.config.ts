@@ -1,4 +1,7 @@
 import { defineConfig } from '@playwright/test';
+
+const isCI = process.env.CI !== undefined;
+
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 60000,
@@ -14,6 +17,6 @@ export default defineConfig({
   webServer: {
     command: 'bun run dev',
     url: 'http://localhost:3000/health',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !isCI,
   },
 });

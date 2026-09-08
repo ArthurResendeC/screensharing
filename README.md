@@ -1,10 +1,11 @@
-# WebRTC Screen Share
+# ReShare
 
 Aplicação privada para até **cinco participantes**. Cada pessoa pode transmitir a própria tela e assistir a **uma transmissão remota por vez**, inclusive enquanto transmite. A mídia segue diretamente entre navegadores por WebRTC; o servidor Bun entrega o frontend e transporta somente signaling por WebSocket.
 
 ## Stack e arquitetura
 
-- Bun 1.4, TypeScript, HTML e CSS, sem framework de UI.
+- Bun 1.4, React 19, TypeScript e CSS.
+- A sala é composta por componentes React separados para navegação, participantes, palco e modais; o controlador de sessão mantém signaling, captura e ciclo de vida WebRTC fora da camada visual.
 - Um único `Bun.serve()` atende `/`, `/room/:roomId`, `/health`, `/config.json` e o WebSocket `/signaling`.
 - Zod valida todas as mensagens nos dois lados.
 - As salas ficam em memória e usam uma réplica do servidor.
