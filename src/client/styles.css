@@ -446,24 +446,80 @@ ul.members {
 .debug-content {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10.5px;
-  line-height: 1.8;
+  line-height: 1.55;
   color: var(--muted);
-  max-height: min(60vh, 420px);
+  max-height: min(70vh, 620px);
   overflow-y: auto;
 }
-.debug-content section {
-  margin-bottom: 10px;
+.debug-content .debug-peer {
+  margin: 14px 0 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
 }
 .debug-content h3 {
-  font-size: 10.5px;
-  margin: 6px 0 2px;
+  font-size: 12px;
+  margin: 0 0 8px;
   color: var(--ink);
   font-weight: 700;
 }
-.debug-content pre {
-  white-space: pre-wrap;
-  margin: 2px 0;
-  font-family: inherit;
+.debug-content details {
+  margin: 7px 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.debug-content summary {
+  padding: 6px 8px;
+  color: var(--ink);
+  background: var(--hover);
+  cursor: pointer;
+  font-weight: 700;
+}
+.debug-note {
+  margin: 0 0 10px;
+  padding: 7px 9px;
+  border-left: 2px solid var(--accent);
+  background: var(--hover);
+}
+.debug-metrics {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(230px, 1.3fr);
+  gap: 4px 12px;
+  padding: 8px;
+}
+.debug-metrics span {
+  color: var(--muted);
+}
+.debug-metrics strong {
+  min-width: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.debug-findings {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.debug-findings p {
+  margin: 0;
+  padding: 5px 8px;
+  border-radius: 6px;
+}
+.debug-findings .warning {
+  color: var(--danger);
+  background: rgba(224, 121, 107, 0.1);
+}
+.debug-findings .info {
+  color: var(--ink);
+  background: var(--hover);
+}
+@media (max-width: 600px) {
+  .debug-metrics {
+    grid-template-columns: 1fr;
+  }
+  .debug-metrics span:not(:first-child) {
+    margin-top: 4px;
+  }
 }
 
 .settings-panel {
