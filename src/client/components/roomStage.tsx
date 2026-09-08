@@ -1,7 +1,7 @@
 import type { ScreenShareController, ScreenShareState } from '../screenShare';
 import { MediaVideo } from './mediaVideo';
 import { ScreenPicker, WatcherList } from './roomParticipants';
-import { CloseIcon, EndedIcon, GridIcon, PlusIcon, ScreenIcon, StopIcon } from './icons';
+import { EndedIcon, PlusIcon, ScreenIcon, StopIcon } from './icons';
 
 export function RoomStage({ state, controller }: { state: ScreenShareState; controller: ScreenShareController }) {
   const connected = state.socketState === 'connected' && Boolean(state.selfId);
@@ -25,11 +25,6 @@ export function RoomStage({ state, controller }: { state: ScreenShareState; cont
         <div className="divider" />
         <span className="sub">{subtitle}</span>
         <div className="actions">
-          {watching && (
-            <button type="button" className="btn btn-outline" onClick={() => controller.watch(null)}>
-              <GridIcon /> Ver lista
-            </button>
-          )}
           <button
             type="button"
             className="btn btn-primary"
@@ -110,17 +105,11 @@ export function RoomStage({ state, controller }: { state: ScreenShareState; cont
               </div>
             </div>
           )}
-          <MediaVideo stream={state.remoteStream} label="Transmissão selecionada" />
-          {watching && (
-            <button
-              type="button"
-              className="btn-icon leave-stream-btn"
-              title="Sair da transmissão"
-              onClick={() => controller.watch(null)}
-            >
-              <CloseIcon />
-            </button>
-          )}
+          <MediaVideo
+            stream={state.remoteStream}
+            label="Transmissão selecionada"
+            onStopWatching={() => controller.watch(null)}
+          />
         </div>
         <div className="action-bar">
           <button

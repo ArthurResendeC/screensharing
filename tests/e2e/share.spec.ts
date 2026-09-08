@@ -4,6 +4,8 @@ type TestWindow = Window & {
   testConnections: RTCPeerConnection[];
   testSockets: WebSocket[];
   testTrack: MediaStreamTrack;
+  testPictureInPictureRequests: number;
+  testAutoPipHandler: (() => void) | null;
 };
 const remoteVideo = (page: Page) => page.getByLabel('Transmissão selecionada', { exact: true });
 const shareButton = (page: Page) => page.locator('[data-share]');
@@ -17,7 +19,53 @@ async function instrument(context: BrowserContext) {
     Object.assign(window, {
       testConnections: connections,
       testSockets: sockets,
+      testPictureInPictureRequests: 0,
+      testAutoPipHandler: null,
     });
+
+    let pictureInPictureElement: Element | null = null;
+    let fullscreenElement: Element | null = null;
+    Object.defineProperties(document, {
+      pictureInPictureEnabled: { configurable: true, get: () => true },
+      pictureInPictureElement: { configurable: true, get: () => pictureInPictureElement },
+      fullscreenEnabled: { configurable: true, get: () => true },
+      fullscreenElement: { configurable: true, get: () => fullscreenElement },
+    });
+    const enterPictureInPicture = (element: HTMLVideoElement) => {
+      pictureInPictureElement = element;
+      element.dispatchEvent(new Event('enterpictureinpicture'));
+    };
+    HTMLVideoElement.prototype.requestPictureInPicture = async function () {
+      (window as unknown as TestWindow).testPictureInPictureRequests++;
+      enterPictureInPicture(this);
+      return Object.assign(new EventTarget(), { width: 640, height: 360, onresize: null });
+    };
+    document.exitPictureInPicture = async () => {
+      const previous = pictureInPictureElement;
+      pictureInPictureElement = null;
+      previous?.dispatchEvent(new Event('leavepictureinpicture'));
+    };
+    const enterFullscreen = (element: Element) => {
+      fullscreenElement = element;
+      document.dispatchEvent(new Event('fullscreenchange'));
+    };
+    Element.prototype.requestFullscreen = async function () {
+      enterFullscreen(this);
+    };
+    document.exitFullscreen = async () => {
+      fullscreenElement = null;
+      document.dispatchEvent(new Event('fullscreenchange'));
+    };
+
+    const mediaSession = navigator.mediaSession;
+    const nativeActionHandler = mediaSession.setActionHandler.bind(mediaSession);
+    mediaSession.setActionHandler = ((action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+      if ((action as string) === 'enterpictureinpicture') {
+        (window as unknown as TestWindow).testAutoPipHandler = handler ? () => handler({ action }) : null;
+        return;
+      }
+      nativeActionHandler(action, handler);
+    }) as typeof mediaSession.setActionHandler;
     const NativePeer = window.RTCPeerConnection;
     window.RTCPeerConnection = class extends NativePeer {
       constructor(configuration?: RTCConfiguration) {
@@ -185,6 +233,28 @@ test('five participants: simultaneous publishing, reciprocal watching and one re
   await Promise.all([choose(a, bName), choose(b, aName)]);
   await playing(a, 'blue', 0);
   await playing(b, 'red', 1);
+  const muteButton = b.getByRole('button', { name: 'Desligar áudio', exact: true });
+  await muteButton.click();
+  await expect(b.getByRole('button', { name: 'Ligar áudio', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(remoteVideo(b)).toHaveJSProperty('muted', true);
+  await b.getByRole('button', { name: 'Ligar áudio', exact: true }).click();
+  await expect(remoteVideo(b)).toHaveJSProperty('muted', false);
+
+  await expect.poll(() => b.evaluate(() => Boolean((window as unknown as TestWindow).testAutoPipHandler))).toBe(true);
+  await b.evaluate(() => (window as unknown as TestWindow).testAutoPipHandler?.());
+  await expect(b.getByRole('button', { name: 'Sair do picture-in-picture', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  expect(await b.evaluate(() => (window as unknown as TestWindow).testPictureInPictureRequests)).toBe(1);
+  await b.getByRole('button', { name: 'Sair do picture-in-picture', exact: true }).click();
+
+  await b.getByRole('button', { name: 'Abrir em tela cheia', exact: true }).click();
+  await expect(b.getByRole('button', { name: 'Sair da tela cheia', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await b.getByRole('button', { name: 'Sair da tela cheia', exact: true }).click();
   for (const viewer of viewers) {
     await choose(viewer, aName);
     await playing(viewer, 'red', 1);
@@ -213,6 +283,10 @@ test('five participants: simultaneous publishing, reciprocal watching and one re
   await shareButton(b).click();
   await choose(c, bName);
   await playing(c, 'blue', 0);
+  await viewers[2].getByRole('button', { name: 'Deixar de assistir', exact: true }).click();
+  await cleared(viewers[2]);
+  await expect.poll(() => activeCounts(viewers[2])).toEqual({ sending: 0, receiving: 0, total: 0 });
+  expect(await viewers[2].evaluate(() => (window as unknown as TestWindow).testAutoPipHandler)).toBeNull();
   await a.close(); // Creator leaving does not close the room or B's stream.
   await expect(participantCount(b)).toHaveText('4 / 5');
   await cleared(b);

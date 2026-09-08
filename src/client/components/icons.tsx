@@ -143,3 +143,70 @@ export function StopIcon() {
     </svg>
   );
 }
+
+export function VolumeIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polygon points="11 5 6 9 2.5 9 2.5 15 6 15 11 19" />
+      <path d="M15 9a4 4 0 0 1 0 6" />
+      <path d="M18 6a8 8 0 0 1 0 12" />
+    </svg>
+  );
+}
+
+export function VolumeMutedIcon() {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
+      <polygon points="11 5 6 9 2.5 9 2.5 15 6 15 11 19" />
+      <line x1="16" y1="9" x2="21" y2="14" />
+      <line x1="21" y1="9" x2="16" y2="14" />
+    </svg>
+  );
+}
+
+export function PipIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="2.5" y="4" width="19" height="16" rx="2" />
+      <rect x="12" y="11" width="7" height="6" rx="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function FullscreenIcon({ active = false }: { active?: boolean }) {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
+      {active ? (
+        <>
+          <polyline points="9 3 9 9 3 9" />
+          <polyline points="15 3 15 9 21 9" />
+          <polyline points="9 21 9 15 3 15" />
+          <polyline points="15 21 15 15 21 15" />
+        </>
+      ) : (
+        <>
+          <polyline points="8 3 3 3 3 8" />
+          <polyline points="16 3 21 3 21 8" />
+          <polyline points="8 21 3 21 3 16" />
+          <polyline points="16 21 21 21 21 16" />
+        </>
+      )}
+    </svg>
+  );
+}
