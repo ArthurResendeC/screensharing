@@ -152,6 +152,25 @@ export function StarIcon({ filled = false }: { filled?: boolean }) {
   );
 }
 
+export function EyeIcon({ visible = false }: { visible?: boolean }) {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+      <circle cx="12" cy="12" r="2.5" />
+      {!visible && <line x1="4" y1="3.5" x2="20" y2="20.5" />}
+    </svg>
+  );
+}
+
 export function StopIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">

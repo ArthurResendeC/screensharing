@@ -3,7 +3,6 @@ import { z } from 'zod';
 export const roomIdSchema = z.string().uuid();
 const id = z.string().uuid();
 export const ROOM_NAME_MAX_LENGTH = 64;
-export const ROOM_PASSWORD_MIN_LENGTH = 8;
 export const ROOM_PASSWORD_MAX_LENGTH = 128;
 export const ROOM_CREDENTIAL_MAX_LENGTH = 2048;
 export const ROOM_ACCESS_TOKEN_MAX_LENGTH = 1024;
@@ -14,7 +13,7 @@ export const roomNameSchema = z
   .min(1)
   .transform(value => value.normalize('NFC'))
   .pipe(z.string().max(ROOM_NAME_MAX_LENGTH));
-export const roomPasswordSchema = z.string().min(ROOM_PASSWORD_MIN_LENGTH).max(ROOM_PASSWORD_MAX_LENGTH);
+export const roomPasswordSchema = z.string().min(1).max(ROOM_PASSWORD_MAX_LENGTH);
 export const roomCredentialSchema = z.string().min(1).max(ROOM_CREDENTIAL_MAX_LENGTH);
 export const roomAccessTokenSchema = z.string().min(1).max(ROOM_ACCESS_TOKEN_MAX_LENGTH);
 const candidateSchema = z

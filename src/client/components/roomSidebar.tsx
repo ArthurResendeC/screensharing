@@ -5,7 +5,7 @@ import { ACCENTS, type ScreenShareController, type ScreenShareState } from '../s
 import { inviteUrl, listFavoriteRooms } from '../roomStorage';
 import { avatarColor, initialsOf, participantName } from '../participantPresentation';
 import { ParticipantList } from './roomParticipants';
-import { ArrowLeftIcon, GearIcon, LeaveIcon, ScreenIcon, StarIcon } from './icons';
+import { ArrowLeftIcon, GearIcon, LeaveIcon, ScreenIcon } from './icons';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 type Props = { roomId: string; state: ScreenShareState; controller: ScreenShareController; onDebug: () => void };
@@ -32,6 +32,7 @@ const CAPTURE_ITEMS: Array<{ label: string; value: ScreenShareState['captureQual
 
 export function RoomSidebar({ roomId, state, controller, onDebug }: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const favoriteRooms = listFavoriteRooms();
   const connected = state.socketState === 'connected' && Boolean(state.selfId);
   const selfName = state.selfId ? controller.nameOf(state.selfId) : 'Você';
   const fallbackName = state.selfId ? participantName(state.selfId) : 'Participante';
@@ -48,20 +49,27 @@ export function RoomSidebar({ roomId, state, controller, onDebug }: Props) {
           <ScreenIcon />
         </div>
         <div className="rail-sep" />
-        <nav className="rail-favorites" aria-label="Salas favoritas">
-          {listFavoriteRooms().map(room => (
-            <a
-              key={room.roomId}
-              className={`rail-btn${room.roomId === roomId ? ' is-active' : ''}`}
-              href={inviteUrl(room)}
-              title={room.roomName}
-              aria-label={`Abrir sala favorita ${room.roomName}`}
-            >
-              <StarIcon filled />
-            </a>
-          ))}
-        </nav>
-        <div className="rail-sep" />
+        {favoriteRooms.length > 0 && (
+          <>
+            <nav className="rail-favorites" aria-label="Salas favoritas">
+              {favoriteRooms.map(room => (
+                <a
+                  key={room.roomId}
+                  className={`rail-btn rail-room${room.roomId === roomId ? ' is-active' : ''}`}
+                  href={inviteUrl(room)}
+                  title={room.roomName}
+                  aria-label={`Abrir sala favorita ${room.roomName}`}
+                  style={{ background: avatarColor(room.roomName) }}
+                >
+                  <span className="rail-room-initials" aria-hidden="true">
+                    {initialsOf(room.roomName)}
+                  </span>
+                </a>
+              ))}
+            </nav>
+            <div className="rail-sep" />
+          </>
+        )}
         <a className="rail-btn rail-btn-danger" href="/" title="Sair da sala">
           <ArrowLeftIcon />
         </a>

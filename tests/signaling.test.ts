@@ -195,6 +195,30 @@ test('rooms without a password can be joined directly and do not issue access to
   }
 });
 
+test('a protected room accepts a single-character password', () => {
+  const hub = new SignalingHub(ROOM_SECRET);
+  const client = hub.createClient();
+  const socket = new FakeSocket();
+  hub.open(client, socket);
+  try {
+    hub.message(client, JSON.stringify({ type: 'create-room', name: 'Senha curta', password: 'x' }));
+    const created = socket.take('room-created');
+    if (created.type !== 'room-created') throw new Error();
+    hub.message(
+      client,
+      JSON.stringify({
+        type: 'join-room',
+        roomId: created.roomId,
+        credential: created.credential,
+        password: 'x',
+      }),
+    );
+    expect(socket.take('joined').type).toBe('joined');
+  } finally {
+    hub.close();
+  }
+});
+
 test('room subscriptions: one selection, reciprocal watching, isolation and independent lifecycle', () => {
   const hub = new SignalingHub(ROOM_SECRET);
   const connect = (): Peer => {

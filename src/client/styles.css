@@ -196,6 +196,37 @@ code,
   min-width: 0;
   font: inherit;
 }
+.password-input {
+  position: relative;
+  display: flex;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.password-input input {
+  width: 100%;
+  padding-right: 42px;
+}
+.password-visibility {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.password-visibility:hover,
+.password-visibility:focus-visible {
+  background: var(--hover);
+  color: var(--ink);
+}
 .lobby .lobby-card {
   align-items: stretch;
   padding: 18px;
@@ -311,6 +342,19 @@ code,
 .rail .rail-btn.is-active {
   color: var(--accent);
   box-shadow: inset 3px 0 var(--accent);
+}
+.rail .rail-room {
+  color: var(--accent-ink);
+}
+.rail .rail-room:hover {
+  color: var(--accent-ink);
+  filter: brightness(1.1);
+}
+.rail-room-initials {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
 }
 .rail .rail-btn {
   width: 46px;
@@ -1284,6 +1328,10 @@ ul.members {
   padding: 10px 12px;
   font: inherit;
   text-align: center;
+}
+.name-gate-card .password-input {
+  flex: none;
+  width: 100%;
 }
 .name-gate-card .btn {
   justify-content: center;

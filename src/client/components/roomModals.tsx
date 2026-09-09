@@ -1,7 +1,7 @@
 import React, { useEffect, useState, type ReactNode } from 'react';
-import { ALIAS_MAX_LENGTH, ROOM_PASSWORD_MAX_LENGTH, ROOM_PASSWORD_MIN_LENGTH } from '../../lib/signaling/messages';
+import { ALIAS_MAX_LENGTH, ROOM_PASSWORD_MAX_LENGTH } from '../../lib/signaling/messages';
 import type { ScreenShareController, ScreenShareState } from '../screenShare';
-import { CloseIcon, EndedIcon, ScreenIcon } from './icons';
+import { CloseIcon, EndedIcon, EyeIcon, ScreenIcon } from './icons';
 
 export function NameGate({ state, controller }: { state: ScreenShareState; controller: ScreenShareController }) {
   const [open, setOpen] = useState(!state.alias);
@@ -43,6 +43,7 @@ export function RoomPasswordGate({
   error?: ScreenShareState['accessError'];
   onSubmit: (password: string) => void;
 }) {
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const submit = (event: React.SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
     const password = new FormData(event.currentTarget).get('room-password');
@@ -74,16 +75,26 @@ export function RoomPasswordGate({
               : 'Digite a senha compartilhada pelo criador. Ela não será salva neste navegador.'}
         </p>
         {!terminal && (
-          <input
-            autoFocus
-            name="room-password"
-            type="password"
-            aria-label="Senha da sala"
-            minLength={ROOM_PASSWORD_MIN_LENGTH}
-            maxLength={ROOM_PASSWORD_MAX_LENGTH}
-            autoComplete="off"
-            required
-          />
+          <div className="password-input">
+            <input
+              autoFocus
+              name="room-password"
+              type={passwordVisible ? 'text' : 'password'}
+              aria-label="Senha da sala"
+              maxLength={ROOM_PASSWORD_MAX_LENGTH}
+              autoComplete="off"
+              required
+            />
+            <button
+              type="button"
+              className="password-visibility"
+              aria-label={passwordVisible ? 'Ocultar senha' : 'Mostrar senha'}
+              aria-pressed={passwordVisible}
+              onClick={() => setPasswordVisible(visible => !visible)}
+            >
+              <EyeIcon visible={passwordVisible} />
+            </button>
+          </div>
         )}
         {error === 'wrong-password' && <p className="error">{message}</p>}
         {terminal ? (

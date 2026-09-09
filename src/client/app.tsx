@@ -4,7 +4,6 @@ import { z } from 'zod';
 import {
   ROOM_NAME_MAX_LENGTH,
   ROOM_PASSWORD_MAX_LENGTH,
-  ROOM_PASSWORD_MIN_LENGTH,
   roomIdSchema,
   roomNameSchema,
   roomPasswordSchema,
@@ -13,6 +12,7 @@ import { createRoom } from '../lib/signaling/client';
 import { configureRtc } from '../lib/webrtc/rtcConfiguration';
 import { Room } from './room';
 import { RoomPasswordGate } from './components/roomModals';
+import { EyeIcon } from './components/icons';
 import {
   findStoredInvite,
   findRoomAccess,
@@ -86,6 +86,7 @@ function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
   const [theme, setTheme] = useState(loadTheme);
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [favorites, setFavorites] = useState(listFavoriteRooms);
   const lastRoom = recallRecentRoom();
 
@@ -115,7 +116,7 @@ function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
       passwordValue === '' ? { success: true as const, data: undefined } : roomPasswordSchema.safeParse(passwordValue);
     if (!parsedName.success || !parsedPassword.success) {
       setError(
-        `Informe um nome e, se quiser proteger a sala, use uma senha entre ${ROOM_PASSWORD_MIN_LENGTH} e ${ROOM_PASSWORD_MAX_LENGTH} caracteres.`,
+        `Informe um nome e, se quiser proteger a sala, use uma senha de até ${ROOM_PASSWORD_MAX_LENGTH} caracteres.`,
       );
       return;
     }
@@ -160,14 +161,24 @@ function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
         <label htmlFor="room-name">Nome da sala</label>
         <input id="room-name" name="room-name" maxLength={ROOM_NAME_MAX_LENGTH} required />
         <label htmlFor="new-room-password">Senha (opcional)</label>
-        <input
-          id="new-room-password"
-          name="room-password"
-          type="password"
-          minLength={ROOM_PASSWORD_MIN_LENGTH}
-          maxLength={ROOM_PASSWORD_MAX_LENGTH}
-          autoComplete="new-password"
-        />
+        <div className="password-input">
+          <input
+            id="new-room-password"
+            name="room-password"
+            type={passwordVisible ? 'text' : 'password'}
+            maxLength={ROOM_PASSWORD_MAX_LENGTH}
+            autoComplete="new-password"
+          />
+          <button
+            type="button"
+            className="password-visibility"
+            aria-label={passwordVisible ? 'Ocultar senha' : 'Mostrar senha'}
+            aria-pressed={passwordVisible}
+            onClick={() => setPasswordVisible(visible => !visible)}
+          >
+            <EyeIcon visible={passwordVisible} />
+          </button>
+        </div>
         <button type="submit" className="btn btn-primary" disabled={creating}>
           {creating ? 'Criando…' : 'Criar sala'}
         </button>

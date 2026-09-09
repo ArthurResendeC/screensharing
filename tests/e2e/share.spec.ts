@@ -248,6 +248,11 @@ test('protected room validates its password and each browser manages its own fav
 test('creates and enters a room without a password', async ({ page }) => {
   await page.goto('/');
   await page.getByLabel('Nome da sala').fill('Sala sem senha');
+  const optionalPassword = page.getByLabel('Senha (opcional)', { exact: true });
+  await page.getByRole('button', { name: 'Mostrar senha' }).click();
+  await expect(optionalPassword).toHaveAttribute('type', 'text');
+  await page.getByRole('button', { name: 'Ocultar senha' }).click();
+  await expect(optionalPassword).toHaveAttribute('type', 'password');
   await page.getByRole('button', { name: 'Criar sala' }).click();
   await expect(page).toHaveURL(/\/room\//);
   await enterRoom(page, 'Visitante');
