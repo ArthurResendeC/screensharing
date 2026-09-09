@@ -59,7 +59,7 @@ export function RoomSidebar({ roomId, state, controller, onDebug }: Props) {
                   href={inviteUrl(room)}
                   title={room.roomName}
                   aria-label={`Abrir sala favorita ${room.roomName}`}
-                  style={{ background: avatarColor(room.roomName) }}
+                  style={{ background: 'var(--card-2)', color: 'var(--ink)' }}
                 >
                   <span className="rail-room-initials" aria-hidden="true">
                     {initialsOf(room.roomName)}
