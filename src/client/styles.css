@@ -386,6 +386,21 @@ code,
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
+  transition:
+    width 0.18s ease,
+    flex-basis 0.18s ease,
+    visibility 0s linear 0s;
+}
+.sidebar.is-collapsed {
+  width: 0;
+  flex-basis: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    width 0.18s ease,
+    flex-basis 0.18s ease,
+    visibility 0s linear 0.18s;
 }
 
 .sidebar-header {
@@ -861,6 +876,10 @@ ul.members {
 .topbar .icon {
   opacity: 0.5;
 }
+.topbar .sidebar-toggle {
+  flex: 0 0 auto;
+  margin-left: -5px;
+}
 .topbar .title {
   font-size: 14.5px;
   font-weight: 700;
@@ -880,6 +899,50 @@ ul.members {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.layout-switch {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  margin-left: 6px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--card);
+}
+.layout-switch button {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.layout-switch button:hover,
+.layout-switch button:focus-visible {
+  color: var(--ink);
+  background: var(--hover);
+}
+.layout-switch button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.layout-switch button.is-active {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+@media (max-width: 1200px) {
+  .layout-switch button span {
+    display: none;
+  }
 }
 
 .stage {
@@ -913,8 +976,11 @@ ul.members {
   gap: 2px;
   background: var(--border);
 }
-.remote-stream-grid.has-two {
+.remote-stream-grid.has-two.layout-columns {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.remote-stream-grid.has-two.layout-rows {
+  grid-template-rows: repeat(2, minmax(0, 1fr));
 }
 .remote-stream-cell {
   position: relative;
@@ -949,9 +1015,16 @@ ul.members {
 }
 
 @media (max-width: 800px) {
-  .remote-stream-grid.has-two {
+  .remote-stream-grid.has-two.layout-columns {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .sidebar.is-collapsed {
+    transition: none;
   }
 }
 .media-viewport {

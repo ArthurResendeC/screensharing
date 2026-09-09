@@ -8,7 +8,13 @@ import { ParticipantList } from './roomParticipants';
 import { ArrowLeftIcon, GearIcon, LeaveIcon, ScreenIcon } from './icons';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
-type Props = { roomId: string; state: ScreenShareState; controller: ScreenShareController; onDebug: () => void };
+type Props = {
+  roomId: string;
+  state: ScreenShareState;
+  controller: ScreenShareController;
+  collapsed: boolean;
+  onDebug: () => void;
+};
 
 const CODEC_LABELS: Record<VideoCodecPreference, string> = {
   auto: 'Automático — recomendado',
@@ -30,7 +36,7 @@ const CAPTURE_ITEMS: Array<{ label: string; value: ScreenShareState['captureQual
   { value: 'sharp', label: 'Nítida — 1440p · 60 FPS' },
 ];
 
-export function RoomSidebar({ roomId, state, controller, onDebug }: Props) {
+export function RoomSidebar({ roomId, state, controller, collapsed, onDebug }: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const favoriteRooms = listFavoriteRooms();
   const connected = state.socketState === 'connected' && Boolean(state.selfId);
@@ -74,7 +80,7 @@ export function RoomSidebar({ roomId, state, controller, onDebug }: Props) {
           <ArrowLeftIcon />
         </a>
       </div>
-      <aside className="sidebar">
+      <aside id="room-sidebar" className={`sidebar${collapsed ? ' is-collapsed' : ''}`} aria-hidden={collapsed}>
         <div className="sidebar-header">
           <div className="title-row">
             <span>{state.roomName || 'Sala de transmissão'}</span>

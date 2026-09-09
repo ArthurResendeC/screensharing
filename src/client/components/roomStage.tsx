@@ -1,19 +1,36 @@
+import { useState } from 'react';
 import type { ScreenShareController, ScreenShareState } from '../screenShare';
 import { MediaVideo } from './mediaVideo';
 import { ScreenPicker, WatcherList } from './roomParticipants';
-import { EndedIcon, PlusIcon, ScreenIcon, StarIcon, StopIcon } from './icons';
+import {
+  EndedIcon,
+  LayoutColumnsIcon,
+  LayoutRowsIcon,
+  PanelIcon,
+  PlusIcon,
+  ScreenIcon,
+  StarIcon,
+  StopIcon,
+} from './icons';
+
+type StreamLayout = 'columns' | 'rows';
 
 export function RoomStage({
   state,
   controller,
   favorite,
+  sidebarCollapsed,
+  onToggleSidebar,
   onToggleFavorite,
 }: {
   state: ScreenShareState;
   controller: ScreenShareController;
   favorite: boolean;
+  sidebarCollapsed: boolean;
+  onToggleSidebar: () => void;
   onToggleFavorite: () => void;
 }) {
+  const [streamLayout, setStreamLayout] = useState<StreamLayout>('rows');
   const connected = state.socketState === 'connected' && Boolean(state.selfId);
   const live = state.members.filter(member => member.sharing && member.peerId !== state.selfId);
   const watching = state.selectedIds.length > 0;
@@ -34,10 +51,47 @@ export function RoomStage({
   return (
     <div className="main">
       <div className="topbar">
+        <button
+          type="button"
+          className={`btn-icon sidebar-toggle${sidebarCollapsed ? ' is-active' : ''}`}
+          title={sidebarCollapsed ? 'Expandir painel de participantes' : 'Recolher painel de participantes'}
+          aria-label={sidebarCollapsed ? 'Expandir painel de participantes' : 'Recolher painel de participantes'}
+          aria-controls="room-sidebar"
+          aria-expanded={!sidebarCollapsed}
+          onClick={onToggleSidebar}
+        >
+          <PanelIcon collapsed={sidebarCollapsed} />
+        </button>
         <ScreenIcon size={17} className="icon" />
         <span className="title">{title}</span>
         <div className="divider" />
         <span className="sub">{subtitle}</span>
+        {state.selectedIds.length > 1 && (
+          <div className="layout-switch" role="group" aria-label="Layout das transmissões">
+            <button
+              type="button"
+              className={streamLayout === 'columns' ? 'is-active' : ''}
+              title="Exibir transmissões lado a lado"
+              aria-label="Exibir transmissões lado a lado"
+              aria-pressed={streamLayout === 'columns'}
+              onClick={() => setStreamLayout('columns')}
+            >
+              <LayoutColumnsIcon />
+              <span>Lado a lado</span>
+            </button>
+            <button
+              type="button"
+              className={streamLayout === 'rows' ? 'is-active' : ''}
+              title="Empilhar transmissões"
+              aria-label="Empilhar transmissões"
+              aria-pressed={streamLayout === 'rows'}
+              onClick={() => setStreamLayout('rows')}
+            >
+              <LayoutRowsIcon />
+              <span>Empilhado</span>
+            </button>
+          </div>
+        )}
         <div className="actions">
           <button type="button" className="btn btn-outline" disabled={!state.roomName} onClick={onToggleFavorite}>
             <StarIcon filled={favorite} /> {favorite ? 'Favoritada' : 'Favoritar'}
@@ -123,7 +177,9 @@ export function RoomStage({
             </div>
           )}
           {watching && (
-            <div className={`remote-stream-grid${state.selectedIds.length > 1 ? ' has-two' : ''}`}>
+            <div
+              className={`remote-stream-grid${state.selectedIds.length > 1 ? ` has-two layout-${streamLayout}` : ''}`}
+            >
               {state.selectedIds.map((peerId, index) => {
                 const remote = state.remoteStreams.find(item => item.peerId === peerId);
                 return (

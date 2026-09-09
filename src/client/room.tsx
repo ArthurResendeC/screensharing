@@ -19,6 +19,7 @@ export function Room({
 }) {
   const { controller, state } = useScreenShareController(roomId, credential, password, accessToken);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [favorite, setFavorite] = useState(() => isFavoriteRoom(roomId));
   const toggleFavorite = () => {
     if (favorite) removeFavoriteRoom(roomId);
@@ -36,8 +37,21 @@ export function Room({
   return (
     <div>
       <div className="shell" style={{ '--accent': state.accent } as CSSProperties}>
-        <RoomSidebar roomId={roomId} state={state} controller={controller} onDebug={() => setDebugOpen(true)} />
-        <RoomStage state={state} controller={controller} favorite={favorite} onToggleFavorite={toggleFavorite} />
+        <RoomSidebar
+          roomId={roomId}
+          state={state}
+          controller={controller}
+          collapsed={sidebarCollapsed}
+          onDebug={() => setDebugOpen(true)}
+        />
+        <RoomStage
+          state={state}
+          controller={controller}
+          favorite={favorite}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={() => setSidebarCollapsed(collapsed => !collapsed)}
+          onToggleFavorite={toggleFavorite}
+        />
       </div>
       {state.accessError && (
         <RoomPasswordGate error={state.accessError} onSubmit={value => controller.retryRoomPassword(value)} />

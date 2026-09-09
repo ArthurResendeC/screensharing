@@ -353,6 +353,24 @@ test('five participants: simultaneous publishing, reciprocal watching and two re
   await expect.poll(() => activeCounts(c)).toEqual({ sending: 0, receiving: 2, total: 2 });
   await expect.poll(() => activeCounts(a)).toEqual({ sending: 4, receiving: 1, total: 5 });
   await expect.poll(() => activeCounts(b)).toEqual({ sending: 2, receiving: 1, total: 3 });
+
+  const streamGrid = c.locator('.remote-stream-grid');
+  await expect(streamGrid).toHaveClass(/layout-rows/);
+  await c.getByRole('button', { name: 'Exibir transmissões lado a lado', exact: true }).click();
+  await expect(streamGrid).toHaveClass(/layout-columns/);
+  await c.getByRole('button', { name: 'Empilhar transmissões', exact: true }).click();
+  await expect(streamGrid).toHaveClass(/layout-rows/);
+
+  const sidebarToggle = c.getByRole('button', { name: 'Recolher painel de participantes', exact: true });
+  await sidebarToggle.click();
+  await expect(c.locator('#room-sidebar')).toHaveClass(/is-collapsed/);
+  await expect(c.getByRole('button', { name: 'Expandir painel de participantes', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+  await c.getByRole('button', { name: 'Expandir painel de participantes', exact: true }).click();
+  await expect(c.locator('#room-sidebar')).not.toHaveClass(/is-collapsed/);
+
   // Each live can be stopped independently while the other remains connected.
   await c.getByRole('button', { name: 'Deixar de assistir', exact: true }).first().click();
   await playing(c, 'blue', 0);
