@@ -8,7 +8,7 @@ Aplicação privada para até **cinco participantes**. Cada pessoa pode transmit
 - A sala é composta por componentes React separados para navegação, participantes, palco e modais; o controlador de sessão mantém signaling, captura e ciclo de vida WebRTC fora da camada visual.
 - Um único `Bun.serve()` atende `/`, `/room/:roomId`, `/health`, `/config.json` e o WebSocket `/signaling`.
 - Zod valida todas as mensagens nos dois lados.
-- As salas ficam em memória e usam uma réplica do servidor.
+- Participantes conectados ficam em memória. O nome e a proteção da sala ficam em um convite assinado, dispensando banco de dados.
 - Cada assinatura usa um `RTCPeerConnection` unidirecional. Um transmissor tem uma conexão de envio por espectador; cada participante mantém no máximo uma conexão de recebimento.
 
 ## Desenvolvimento local
@@ -32,12 +32,14 @@ O processo deve iniciar a partir da raiz; o script `start` entra em `dist` para 
 
 ## Uso
 
-1. Clique em **Criar sala** e compartilhe o convite UUID.
-2. Ao entrar na sala, escolha em **Seu nome na sala** um apelido (até 32 caracteres) que substitui o nome padrão `Participante <id>` para todos. O valor fica salvo no navegador, é reenviado ao reconectar e pode ser alterado depois em **Configurações**.
-3. Qualquer participante pode clicar em **Compartilhar tela** e escolher tela, janela ou aba. Marque áudio no seletor quando disponível.
-4. Escolha uma pessoa que esteja transmitindo na barra lateral ou no seletor de telas. Trocar a seleção fecha a recepção anterior.
-5. O preview local permanece sem som. O vídeo remoto não é silenciado; se o navegador bloquear autoplay com áudio, clique em **Reproduzir vídeo e áudio**.
-6. O botão nativo de parar captura, **Parar compartilhamento**, fechar a aba ou perder o signaling encerram tracks e conexões relacionadas.
+1. Informe um nome e uma senha e clique em **Criar sala**. Compartilhe o link e a senha separadamente.
+2. Quem abrir o convite informa a senha. Ela permanece somente na memória da aba e será solicitada novamente após reload ou em outra aba.
+3. A sala criada é favoritada automaticamente. Outros participantes podem favoritá-la pelo botão da sala; nome e convite ficam no `localStorage` do navegador, mas a senha não.
+4. Ao entrar na sala, escolha em **Seu nome na sala** um apelido (até 32 caracteres) que substitui o nome padrão `Participante <id>` para todos. O valor fica salvo no navegador, é reenviado ao reconectar e pode ser alterado depois em **Configurações**.
+5. Qualquer participante pode clicar em **Compartilhar tela** e escolher tela, janela ou aba. Marque áudio no seletor quando disponível.
+6. Escolha uma pessoa que esteja transmitindo na barra lateral ou no seletor de telas. Trocar a seleção fecha a recepção anterior.
+7. O preview local permanece sem som. O vídeo remoto não é silenciado; se o navegador bloquear autoplay com áudio, clique em **Reproduzir vídeo e áudio**.
+8. O botão nativo de parar captura, **Parar compartilhamento**, fechar a aba ou perder o signaling encerram tracks e conexões relacionadas.
 
 ## Instalação como aplicativo
 
@@ -67,7 +69,7 @@ Para duas máquinas, use o domínio HTTPS do Railway ou outro domínio com TLS v
 
 ## Fluxo WebRTC
 
-O primeiro `join-room` cria a sala. O servidor gera um `peerId`, envia o snapshot e publica mudanças com `room-state`. `sharing-started` apenas anuncia disponibilidade; nenhuma mídia passa pelo servidor.
+`create-room` gera um UUID e uma credencial assinada contendo o nome imutável e um verificador protegido da senha. Em cada `join-room`, o servidor valida convite e senha antes de criar a representação em memória, gera um `peerId`, envia o snapshot e publica mudanças com `room-state`. Assim, o mesmo convite funciona depois que a sala fica vazia ou o servidor reinicia, desde que `ROOM_TOKEN_SECRET` não mude. `sharing-started` apenas anuncia disponibilidade; nenhuma mídia passa pelo servidor.
 
 Ao selecionar um transmissor, o espectador envia `watch` com um `sessionId` novo e prepara uma conexão de recepção. O servidor confirma com `watching` e envia `subscriber-joined` ao transmissor. O transmissor cria uma conexão exclusiva para essa assinatura, adiciona as tracks, cria/aplica a offer e a envia. O espectador aplica a offer, cria/aplica a answer e devolve. ICE é enviado incrementalmente; candidatos que chegam antes de `remoteDescription` ficam em uma fila limitada e são aplicados depois do SDP.
 
@@ -103,10 +105,13 @@ O servidor entrega essa configuração ao navegador em `/config.json`. Credencia
 
 A infraestrutura está em `.railway/railway.ts` e usa um único serviço `web`, uma réplica, health check `/health`, build `bun run build` e start `bun run start`. Consulte [.railway/README.md](.railway/README.md) para o procedimento de migração e deploy pela CLI.
 
+Defina `ROOM_TOKEN_SECRET` com pelo menos 32 caracteres aleatórios e preserve o valor entre deploys. Trocar ou perder esse segredo invalida todos os convites existentes. Em desenvolvimento, quando a variável não existe, é usado apenas um valor local fixo e inseguro.
+
 ## Limitações
 
-- Sem autenticação: quem possui o convite pode entrar.
-- Salas, identidades e seleções desaparecem ao reiniciar o processo.
+- Sem contas ou recuperação administrativa: quem possui convite e senha pode entrar; nome e senha da sala são imutáveis.
+- Participantes, identidades e seleções online desaparecem ao reiniciar o processo; convite e nome da sala permanecem válidos.
+- Favoritos pertencem somente ao perfil atual do navegador e desaparecem ao limpar os dados do site.
 - Uma réplica; escalar exige estado compartilhado e afinidade ou outro desenho de signaling.
 - Sem SFU, gravação, chat, microfone ou retomada automática de ICE.
 - Cada participante assiste uma transmissão por vez.

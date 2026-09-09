@@ -1,9 +1,19 @@
 import type { ScreenShareController, ScreenShareState } from '../screenShare';
 import { MediaVideo } from './mediaVideo';
 import { ScreenPicker, WatcherList } from './roomParticipants';
-import { EndedIcon, PlusIcon, ScreenIcon, StopIcon } from './icons';
+import { EndedIcon, PlusIcon, ScreenIcon, StarIcon, StopIcon } from './icons';
 
-export function RoomStage({ state, controller }: { state: ScreenShareState; controller: ScreenShareController }) {
+export function RoomStage({
+  state,
+  controller,
+  favorite,
+  onToggleFavorite,
+}: {
+  state: ScreenShareState;
+  controller: ScreenShareController;
+  favorite: boolean;
+  onToggleFavorite: () => void;
+}) {
   const connected = state.socketState === 'connected' && Boolean(state.selfId);
   const live = state.members.filter(member => member.sharing && member.peerId !== state.selfId);
   const watching = Boolean(state.selectedId);
@@ -25,6 +35,9 @@ export function RoomStage({ state, controller }: { state: ScreenShareState; cont
         <div className="divider" />
         <span className="sub">{subtitle}</span>
         <div className="actions">
+          <button type="button" className="btn btn-outline" disabled={!state.roomName} onClick={onToggleFavorite}>
+            <StarIcon filled={favorite} /> {favorite ? 'Favoritada' : 'Favoritar'}
+          </button>
           <button
             type="button"
             className="btn btn-primary"

@@ -1,10 +1,28 @@
 import { Fragment, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { z } from 'zod';
-import { roomIdSchema } from '../lib/signaling/messages';
+import {
+  ROOM_NAME_MAX_LENGTH,
+  ROOM_PASSWORD_MAX_LENGTH,
+  ROOM_PASSWORD_MIN_LENGTH,
+  roomIdSchema,
+  roomNameSchema,
+  roomPasswordSchema,
+} from '../lib/signaling/messages';
+import { createRoom } from '../lib/signaling/client';
 import { configureRtc } from '../lib/webrtc/rtcConfiguration';
-import { recallRoom } from './screenShare';
 import { Room } from './room';
+import { RoomPasswordGate } from './components/roomModals';
+import {
+  findStoredInvite,
+  inviteUrl,
+  listFavoriteRooms,
+  parseInvite,
+  recallRecentRoom,
+  removeFavoriteRoom,
+  saveFavoriteRoom,
+  type RoomInvite,
+} from './roomStorage';
 import './styles.css';
 import { applyTheme, loadTheme, type Theme } from './theme';
 
@@ -34,7 +52,7 @@ function Icon({ kind }: { kind: Theme }) {
   );
 }
 
-function roomFromPath() {
+function roomIdFromPath() {
   const match = location.pathname.match(/^\/room\/([^/]+)\/?$/);
   if (!match) return null;
   try {
@@ -44,11 +62,14 @@ function roomFromPath() {
   }
 }
 
-function Lobby() {
+type OpenRoom = (invite: RoomInvite, password?: string) => void;
+
+function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
   const [theme, setTheme] = useState(loadTheme);
   const [error, setError] = useState('');
-  const lastRoom = recallRoom();
-  const canRejoin = lastRoom.length > 0 && roomIdSchema.safeParse(lastRoom).success;
+  const [creating, setCreating] = useState(false);
+  const [favorites, setFavorites] = useState(listFavoriteRooms);
+  const lastRoom = recallRecentRoom();
 
   const changeTheme = (next: Theme) => {
     applyTheme(next);
@@ -59,25 +80,40 @@ function Lobby() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const value = form.get('room');
-    let id = typeof value === 'string' ? value.trim() : '';
-    try {
-      id = new URL(id).pathname.split('/').filter(Boolean).at(-1) ?? '';
-    } catch {
-      // The value may be only a room ID.
-    }
-    if (!roomIdSchema.safeParse(id).success) {
-      setError('Informe um ID de sala válido ou o link de convite.');
+    const invite = typeof value === 'string' ? parseInvite(value.trim()) : null;
+    if (!invite) {
+      setError('Informe um link de convite completo e válido.');
       return;
     }
-    location.assign(`/room/${id}`);
+    onOpenRoom(invite);
   };
 
-  const createRoom = () => {
-    if (!crypto.randomUUID) {
-      setError('Abra em HTTPS ou localhost para criar a sala.');
+  const submitCreate = async (event: React.SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const parsedName = roomNameSchema.safeParse(form.get('room-name'));
+    const parsedPassword = roomPasswordSchema.safeParse(form.get('room-password'));
+    if (!parsedName.success || !parsedPassword.success) {
+      setError(`Use um nome e uma senha entre ${ROOM_PASSWORD_MIN_LENGTH} e ${ROOM_PASSWORD_MAX_LENGTH} caracteres.`);
       return;
     }
-    location.assign(`/room/${crypto.randomUUID()}`);
+    setCreating(true);
+    setError('');
+    try {
+      const created = await createRoom(parsedName.data, parsedPassword.data);
+      const invite = { roomId: created.roomId, credential: created.credential };
+      saveFavoriteRoom({ ...invite, roomName: created.roomName });
+      onOpenRoom(invite, parsedPassword.data);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível criar a sala.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const removeFavorite = (roomId: string) => {
+    removeFavoriteRoom(roomId);
+    setFavorites(listFavoriteRooms());
   };
 
   return (
@@ -97,26 +133,54 @@ function Lobby() {
       </div>
       <h1>ReShare</h1>
       <p>Compartilhe sua tela com até quatro amigos. Todos podem transmitir e escolher uma tela para assistir.</p>
-      <button type="button" className="btn btn-primary" onClick={createRoom}>
-        Criar sala
-      </button>
-      {canRejoin && (
-        <button
-          type="button"
-          className="btn btn-outline"
-          onClick={() => location.assign(`/room/${encodeURIComponent(lastRoom)}`)}
-        >
+      <form className="lobby-card" onSubmit={event => void submitCreate(event)}>
+        <h2>Criar sala</h2>
+        <label htmlFor="room-name">Nome da sala</label>
+        <input id="room-name" name="room-name" maxLength={ROOM_NAME_MAX_LENGTH} required />
+        <label htmlFor="new-room-password">Senha</label>
+        <input
+          id="new-room-password"
+          name="room-password"
+          type="password"
+          minLength={ROOM_PASSWORD_MIN_LENGTH}
+          maxLength={ROOM_PASSWORD_MAX_LENGTH}
+          autoComplete="new-password"
+          required
+        />
+        <button type="submit" className="btn btn-primary" disabled={creating}>
+          {creating ? 'Criando…' : 'Criar sala'}
+        </button>
+      </form>
+      {lastRoom && !favorites.some(room => room.roomId === lastRoom.roomId) && (
+        <button type="button" className="btn btn-outline" onClick={() => onOpenRoom(lastRoom)}>
           Voltar à última sala
         </button>
       )}
-      <form onSubmit={join}>
-        <label htmlFor="room">ID ou URL da sala</label>
-        <input id="room" name="room" required />
+      <form className="lobby-card" onSubmit={join}>
+        <h2>Entrar por convite</h2>
+        <label htmlFor="room">Link da sala</label>
+        <input id="room" name="room" type="url" required />
         <button type="submit" className="btn btn-outline">
           Entrar
         </button>
       </form>
-      <p>O convite permite acesso à sala. Envie somente aos seus amigos.</p>
+      {favorites.length > 0 && (
+        <section className="favorite-rooms" aria-labelledby="favorite-rooms-title">
+          <h2 id="favorite-rooms-title">Salas favoritas</h2>
+          {favorites.map(room => (
+            <div className="favorite-room" key={room.roomId}>
+              <button type="button" className="favorite-room-open" onClick={() => onOpenRoom(room)}>
+                <strong>{room.roomName}</strong>
+                <span className="mono">{room.roomId.slice(0, 8)}</span>
+              </button>
+              <button type="button" className="btn btn-outline" onClick={() => removeFavorite(room.roomId)}>
+                Remover
+              </button>
+            </div>
+          ))}
+        </section>
+      )}
+      <p>Compartilhe o link e a senha separadamente. A senha não é salva pelo ReShare.</p>
       {error && (
         <p role="alert" className="error">
           {error}
@@ -153,9 +217,43 @@ function useOnlineStatus() {
 
 function App() {
   const online = useOnlineStatus();
-  const roomId = roomFromPath();
-  const page =
-    roomId === null ? <Lobby /> : roomIdSchema.safeParse(roomId).success ? <Room roomId={roomId} /> : <InvalidRoom />;
+  const [route, setRoute] = useState(() => {
+    const roomId = roomIdFromPath();
+    if (roomId === null) return null;
+    const invite =
+      parseInvite(location.href) ?? (roomIdSchema.safeParse(roomId).success ? findStoredInvite(roomId) : null);
+    return { roomId, invite, password: undefined as string | undefined };
+  });
+
+  useEffect(() => {
+    const navigate = () => {
+      const roomId = roomIdFromPath();
+      if (roomId === null) setRoute(null);
+      else
+        setRoute({
+          roomId,
+          invite:
+            parseInvite(location.href) ?? (roomIdSchema.safeParse(roomId).success ? findStoredInvite(roomId) : null),
+          password: undefined,
+        });
+    };
+    window.addEventListener('popstate', navigate);
+    return () => window.removeEventListener('popstate', navigate);
+  }, []);
+
+  const openRoom: OpenRoom = (invite, password) => {
+    history.pushState(null, '', inviteUrl(invite));
+    setRoute({ roomId: invite.roomId, invite, password });
+  };
+
+  let page;
+  if (!route) page = <Lobby onOpenRoom={openRoom} />;
+  else if (!roomIdSchema.safeParse(route.roomId).success || !route.invite) page = <InvalidRoom />;
+  else if (!route.password)
+    page = (
+      <RoomPasswordGate onSubmit={password => setRoute(current => (current ? { ...current, password } : current))} />
+    );
+  else page = <Room roomId={route.roomId} credential={route.invite.credential} password={route.password} />;
   return (
     <Fragment>
       {!online && (

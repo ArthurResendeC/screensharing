@@ -196,6 +196,59 @@ code,
   min-width: 0;
   font: inherit;
 }
+.lobby .lobby-card {
+  align-items: stretch;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--side);
+}
+.lobby-card h2,
+.favorite-rooms h2 {
+  width: 100%;
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+.lobby-card .btn {
+  justify-content: center;
+}
+.favorite-rooms {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.favorite-room {
+  display: flex;
+  gap: 8px;
+}
+.favorite-room-open {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--card-2);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+}
+.favorite-room-open:hover {
+  background: var(--hover);
+}
+.favorite-room-open strong {
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.favorite-room-open span {
+  color: var(--muted);
+  font-size: 10.5px;
+}
 .simple-page {
   max-width: 560px;
   margin: 0 auto;

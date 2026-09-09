@@ -8,6 +8,7 @@ import {
 import { Peers } from '../lib/webrtc/peers';
 import { setVideoDegradation, type VideoDegradation } from '../lib/webrtc/rtcConfiguration';
 import { displayName, participantName } from './participantPresentation';
+import { inviteUrl, rememberRecentRoom } from './roomStorage';
 import { playSound, unlockSounds } from './sounds';
 import { loadTheme, type Theme } from './theme';
 
@@ -34,7 +35,6 @@ export const ACCENTS = [
 ] as const;
 
 const ALIAS_STORAGE_KEY = 'screen-share:alias';
-const LAST_ROOM_STORAGE_KEY = 'screen-share:last-room';
 const DEGRADATION_STORAGE_KEY = 'screen-share:degradation';
 const CAPTURE_STORAGE_KEY = 'screen-share:capture';
 const CODEC_STORAGE_KEY = 'screen-share:codec';
@@ -53,22 +53,6 @@ function storedChoice<T extends string>(key: string, allowed: readonly T[], fall
     return allowed.includes(value) ? value : fallback;
   } catch {
     return fallback;
-  }
-}
-
-export function rememberRoom(roomId: string) {
-  try {
-    localStorage.setItem(LAST_ROOM_STORAGE_KEY, roomId);
-  } catch {
-    // Storage can be unavailable in private browsing.
-  }
-}
-
-export function recallRoom() {
-  try {
-    return localStorage.getItem(LAST_ROOM_STORAGE_KEY) ?? '';
-  } catch {
-    return '';
   }
 }
 
@@ -96,6 +80,8 @@ export type ScreenShareState = {
   watcherIds: string[];
   error: string;
   joinError: string;
+  accessError: '' | 'invalid-invite' | 'wrong-password' | 'too-many-attempts';
+  roomName: string;
   endedReason: EndedReason;
   endedPeerId: string | null;
   theme: Theme;
@@ -119,6 +105,7 @@ export class ScreenShareController {
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private reconnectAttempts = 0;
   private disposed = false;
+  private accessTerminal = false;
   private started = false;
   private settingsTimer?: ReturnType<typeof setInterval>;
   private knownWatcherIds = new Set<string>();
@@ -138,6 +125,8 @@ export class ScreenShareController {
     watcherIds: [],
     error: '',
     joinError: '',
+    accessError: '',
+    roomName: '',
     endedReason: null,
     endedPeerId: null,
     theme: loadTheme(),
@@ -148,7 +137,11 @@ export class ScreenShareController {
     inviteCopied: false,
   };
 
-  constructor(private readonly roomId: string) {}
+  constructor(
+    private readonly roomId: string,
+    private readonly credential: string,
+    private roomPassword: string,
+  ) {}
 
   getSnapshot = () => this.state;
 
@@ -166,7 +159,6 @@ export class ScreenShareController {
     if (this.started) return;
     this.started = true;
     this.disposed = false;
-    rememberRoom(this.roomId);
     unlockSounds();
     setVideoDegradation(this.state.degradation);
     document.addEventListener('visibilitychange', this.wakeReconnect);
@@ -254,13 +246,28 @@ export class ScreenShareController {
     this.update({ joinError: '' });
   }
 
+  retryRoomPassword(password: string) {
+    const session = this.session;
+    if (!session?.channel || session.disposed || this.state.accessError === 'too-many-attempts') return;
+    this.roomPassword = password;
+    this.accessTerminal = false;
+    this.update({ accessError: '', joinError: '' });
+    session.channel.send({
+      type: 'join-room',
+      roomId: this.roomId,
+      credential: this.credential,
+      password,
+      ...(this.clientId ? { clientId: this.clientId } : {}),
+    });
+  }
+
   dismissEnded() {
     this.update({ endedReason: null, endedPeerId: null });
   }
 
   async copyInvite() {
     try {
-      await navigator.clipboard.writeText(location.href);
+      await navigator.clipboard.writeText(inviteUrl({ roomId: this.roomId, credential: this.credential }));
       this.update({ inviteCopied: true });
     } catch {
       this.setError('Não foi possível copiar. Copie a URL da barra do navegador.');
@@ -464,6 +471,7 @@ export class ScreenShareController {
         watcherIds: [],
         error: 'Você está offline. A conexão será retomada quando a internet voltar.',
         joinError: '',
+        accessError: '',
         endedReason: null,
         endedPeerId: null,
         inviteCopied: false,
@@ -482,6 +490,7 @@ export class ScreenShareController {
       watcherIds: [],
       error: this.reconnectAttempts > 0 ? 'Reconectando à sala…' : '',
       joinError: '',
+      accessError: '',
       endedReason: null,
       endedPeerId: null,
       inviteCopied: false,
@@ -520,6 +529,8 @@ export class ScreenShareController {
     try {
       session.channel = connectSignaling(
         this.roomId,
+        this.credential,
+        this.roomPassword,
         this.clientId,
         message => {
           queue = queue.then(() => this.receive(session, message)).catch(reportError);
@@ -546,7 +557,7 @@ export class ScreenShareController {
     session.disposed = true;
     session.channel?.close();
     this.update({ selfId: '', selectedId: null, members: [], remoteStream: null });
-    if (this.disposed) return;
+    if (this.disposed || this.accessTerminal) return;
     this.setError(
       socketState === 'restarting'
         ? 'Nova versão publicada. Reconectando à sala…'
@@ -581,10 +592,17 @@ export class ScreenShareController {
       case 'joined':
         session.joined = true;
         this.reconnectAttempts = 0;
-        this.update({ selfId: message.peerId, error: '' });
+        rememberRecentRoom({ roomId: message.roomId, roomName: message.roomName, credential: this.credential });
+        this.update({ selfId: message.peerId, roomName: message.roomName, accessError: '', error: '' });
         this.updateMembers(session, message.peers);
         if (this.state.alias) session.channel.send({ type: 'set-alias', alias: this.state.alias });
         this.resumeAfterReconnect(session, message.peers);
+        break;
+      case 'room-access-denied':
+        this.accessTerminal = message.reason === 'too-many-attempts';
+        this.update({ accessError: message.reason });
+        break;
+      case 'room-created':
         break;
       case 'room-state':
         this.updateMembers(session, message.peers);

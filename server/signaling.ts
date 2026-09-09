@@ -1,4 +1,5 @@
 import { clientMessageSchema, type ServerMessage } from '../src/lib/signaling/messages';
+import { issueRoomCredential, verifyRoomCredential } from './roomCredentials';
 
 export type SignalingSocket = {
   send(message: string): number;
@@ -19,15 +20,25 @@ export type Client = {
   alive: boolean;
   count: number;
   window: number;
+  failedRoomAttempts: number;
 };
-type Room = { members: Map<string, Client> };
+type Room = { name: string; members: Map<string, Client> };
 
 export class SignalingHub {
   readonly rooms = new Map<string, Room>();
   readonly clients = new Set<Client>();
 
+  constructor(private readonly roomTokenSecret: string) {}
+
   createClient(): Client {
-    return { id: crypto.randomUUID(), sharing: false, alive: true, count: 0, window: Date.now() };
+    return {
+      id: crypto.randomUUID(),
+      sharing: false,
+      alive: true,
+      count: 0,
+      window: Date.now(),
+      failedRoomAttempts: 0,
+    };
   }
 
   open(client: Client, socket: SignalingSocket) {
@@ -129,14 +140,39 @@ export class SignalingHub {
       this.send(client, { type: 'pong' });
       return;
     }
+    if (message.type === 'create-room') {
+      if (client.roomId) {
+        fail('Saia da sala atual antes de criar outra.');
+        return;
+      }
+      const roomId = crypto.randomUUID();
+      this.send(client, {
+        type: 'room-created',
+        roomId,
+        roomName: message.name,
+        credential: issueRoomCredential(this.roomTokenSecret, roomId, message.name, message.password),
+      });
+      return;
+    }
     if (message.type === 'join-room') {
       if (client.roomId) {
         fail('Você já está em uma sala.');
         return;
       }
+      if (client.failedRoomAttempts >= 5) {
+        this.send(client, { type: 'room-access-denied', reason: 'too-many-attempts' });
+        client.socket?.close(1008, 'Too many room access attempts');
+        return;
+      }
+      const verified = verifyRoomCredential(this.roomTokenSecret, message.roomId, message.credential, message.password);
+      if (!verified.ok) {
+        client.failedRoomAttempts++;
+        this.send(client, { type: 'room-access-denied', reason: verified.reason });
+        return;
+      }
       let room = this.rooms.get(message.roomId);
       if (!room) {
-        room = { members: new Map() };
+        room = { name: verified.room.roomName, members: new Map() };
         this.rooms.set(message.roomId, room);
       }
       if (room.members.size >= 5) {
@@ -148,7 +184,13 @@ export class SignalingHub {
       if (message.clientId && !room.members.has(message.clientId)) client.id = message.clientId;
       client.roomId = message.roomId;
       room.members.set(client.id, client);
-      this.send(client, { type: 'joined', roomId: message.roomId, peerId: client.id, peers: this.participants(room) });
+      this.send(client, {
+        type: 'joined',
+        roomId: message.roomId,
+        roomName: room.name,
+        peerId: client.id,
+        peers: this.participants(room),
+      });
       this.broadcast(room);
       return;
     }

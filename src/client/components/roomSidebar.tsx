@@ -54,7 +54,7 @@ export function RoomSidebar({ roomId, state, controller, onDebug }: Props) {
       <aside className="sidebar">
         <div className="sidebar-header">
           <div className="title-row">
-            <span>Sala de transmissão</span>
+            <span>{state.roomName || 'Sala de transmissão'}</span>
           </div>
           <span className="room-id mono" data-room>
             {roomId}

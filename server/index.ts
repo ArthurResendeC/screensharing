@@ -15,7 +15,11 @@ const configuredOrigins = new Set(
     .map(origin => origin.trim())
     .filter(Boolean),
 );
-const hub = new SignalingHub();
+const configuredRoomTokenSecret = process.env.ROOM_TOKEN_SECRET ?? '';
+if (process.env.NODE_ENV === 'production' && configuredRoomTokenSecret.length < 32)
+  throw new Error('ROOM_TOKEN_SECRET deve ter pelo menos 32 caracteres.');
+const roomTokenSecret = configuredRoomTokenSecret || 'development-only-room-token-secret-change-me';
+const hub = new SignalingHub(roomTokenSecret);
 const iconHeaders = { 'cache-control': 'public, max-age=604800' };
 
 function originAllowed(request: Request) {

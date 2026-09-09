@@ -53,9 +53,17 @@ test('opens a room shell offline and reconnects when the network returns', async
   expect(cachedPaths.some(path => path.endsWith('.css'))).toBe(true);
   expect(cachedPaths).not.toContain('/config.json');
 
+  await page.getByLabel('Nome da sala').fill('Sala offline');
+  await page.getByLabel('Senha', { exact: true }).fill('password-for-e2e');
+  await page.getByRole('button', { name: 'Criar sala' }).click();
+  await expect(page).toHaveURL(/\/room\//);
+  const roomUrl = page.url();
+
   await context.setOffline(true);
-  await page.goto('/room/00000000-0000-4000-8000-000000000001');
+  await page.goto(roomUrl);
   await expect(page.getByRole('status')).toContainText('Você está offline');
+  await page.getByLabel('Senha da sala').fill('password-for-e2e');
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click();
   await expect(page.getByText('Sala de transmissão', { exact: true })).toBeVisible();
 
   await context.setOffline(false);

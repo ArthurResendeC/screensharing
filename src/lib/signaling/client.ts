@@ -7,6 +7,8 @@ const PONG_TIMEOUT_MS = 20_000;
 
 export function connectSignaling(
   roomId: string,
+  credential: string,
+  password: string,
   clientId: string,
   onMessage: (message: ServerMessage) => void,
   onState: (state: string) => void,
@@ -45,7 +47,7 @@ export function connectSignaling(
 
   socket.onopen = () => {
     onState('connected');
-    send({ type: 'join-room', roomId, ...(clientId ? { clientId } : {}) });
+    send({ type: 'join-room', roomId, credential, password, ...(clientId ? { clientId } : {}) });
     startHeartbeat();
   };
   socket.onmessage = (event: MessageEvent<unknown>) => {
@@ -76,4 +78,34 @@ export function connectSignaling(
       socket.close();
     },
   };
+}
+
+export function createRoom(name: string, password: string) {
+  return new Promise<Extract<ServerMessage, { type: 'room-created' }>>((resolve, reject) => {
+    const url = new URL('/signaling', location.href);
+    url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const socket = new WebSocket(url);
+    const finish = (error?: Error, room?: Extract<ServerMessage, { type: 'room-created' }>) => {
+      socket.onopen = null;
+      socket.onmessage = null;
+      socket.onerror = null;
+      socket.onclose = null;
+      socket.close();
+      if (error) reject(error);
+      else if (room) resolve(room);
+    };
+    socket.onopen = () => socket.send(JSON.stringify({ type: 'create-room', name, password }));
+    socket.onmessage = event => {
+      try {
+        if (typeof event.data !== 'string') throw new Error();
+        const message = serverMessageSchema.parse(JSON.parse(event.data));
+        if (message.type === 'room-created') finish(undefined, message);
+        else if (message.type === 'error') finish(new Error(message.message));
+      } catch {
+        finish(new Error('O servidor retornou uma resposta inválida.'));
+      }
+    };
+    socket.onerror = () => finish(new Error('Não foi possível conectar ao servidor.'));
+    socket.onclose = () => finish(new Error('A conexão foi encerrada antes da criação da sala.'));
+  });
 }

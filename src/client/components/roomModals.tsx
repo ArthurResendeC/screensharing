@@ -1,5 +1,5 @@
 import React, { useEffect, useState, type ReactNode } from 'react';
-import { ALIAS_MAX_LENGTH } from '../../lib/signaling/messages';
+import { ALIAS_MAX_LENGTH, ROOM_PASSWORD_MAX_LENGTH, ROOM_PASSWORD_MIN_LENGTH } from '../../lib/signaling/messages';
 import type { ScreenShareController, ScreenShareState } from '../screenShare';
 import { CloseIcon, EndedIcon, ScreenIcon } from './icons';
 
@@ -31,6 +31,62 @@ export function NameGate({ state, controller }: { state: ScreenShareState; contr
         <button type="submit" className="btn btn-primary">
           Entrar na sala
         </button>
+      </form>
+    </div>
+  );
+}
+
+export function RoomPasswordGate({
+  error = '',
+  onSubmit,
+}: {
+  error?: ScreenShareState['accessError'];
+  onSubmit: (password: string) => void;
+}) {
+  const submit = (event: React.SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const password = new FormData(event.currentTarget).get('room-password');
+    if (typeof password === 'string') onSubmit(password);
+  };
+  const terminal = error === 'invalid-invite' || error === 'too-many-attempts';
+  const message =
+    error === 'wrong-password'
+      ? 'Senha incorreta. Tente novamente.'
+      : error === 'invalid-invite'
+        ? 'Este convite está ausente, inválido ou foi alterado.'
+        : error === 'too-many-attempts'
+          ? 'Muitas tentativas incorretas. Abra o convite novamente para tentar mais tarde.'
+          : '';
+  return (
+    <div className="name-gate" data-password-gate>
+      <form className="name-gate-card" onSubmit={submit}>
+        <div className="name-gate-icon">
+          <ScreenIcon />
+        </div>
+        <h2>{terminal ? 'Não foi possível entrar' : 'Sala protegida'}</h2>
+        <p>{terminal ? message : 'Digite a senha compartilhada pelo criador. Ela não será salva neste navegador.'}</p>
+        {!terminal && (
+          <input
+            autoFocus
+            name="room-password"
+            type="password"
+            aria-label="Senha da sala"
+            minLength={ROOM_PASSWORD_MIN_LENGTH}
+            maxLength={ROOM_PASSWORD_MAX_LENGTH}
+            autoComplete="off"
+            required
+          />
+        )}
+        {error === 'wrong-password' && <p className="error">{message}</p>}
+        {terminal ? (
+          <a className="btn btn-primary" href="/">
+            Voltar ao início
+          </a>
+        ) : (
+          <button type="submit" className="btn btn-primary">
+            Entrar
+          </button>
+        )}
       </form>
     </div>
   );

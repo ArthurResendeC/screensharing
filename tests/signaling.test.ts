@@ -1,6 +1,26 @@
 import { test, expect } from 'bun:test';
 import { serverMessageSchema, type ServerMessage } from '../src/lib/signaling/messages';
 import { SignalingHub, type Client, type SignalingSocket } from '../server/signaling';
+import { issueRoomCredential } from '../server/roomCredentials';
+
+const ROOM_SECRET = 'test-room-token-secret-at-least-32-characters';
+const ROOM_PASSWORD = 'correct horse battery staple';
+
+function authorized(message: unknown) {
+  if (!message || typeof message !== 'object' || !('type' in message) || message.type !== 'join-room') return message;
+  const join = message as {
+    type: 'join-room';
+    roomId: string;
+    clientId?: string;
+    credential?: string;
+    password?: string;
+  };
+  return {
+    ...join,
+    credential: join.credential ?? issueRoomCredential(ROOM_SECRET, join.roomId, 'Sala de teste', ROOM_PASSWORD),
+    password: join.password ?? ROOM_PASSWORD,
+  };
+}
 
 class FakeSocket implements SignalingSocket {
   inbox: ServerMessage[] = [];
@@ -36,8 +56,93 @@ type Peer = {
   take(type: ServerMessage['type']): ServerMessage;
 };
 
+test('signed rooms preserve their name across hubs and reject invalid access', () => {
+  const connect = (hub: SignalingHub) => {
+    const client = hub.createClient();
+    const socket = new FakeSocket();
+    hub.open(client, socket);
+    return { client, socket, send: (message: unknown) => hub.message(client, JSON.stringify(message)) };
+  };
+  const firstHub = new SignalingHub(ROOM_SECRET);
+  const creator = connect(firstHub);
+  creator.send({ type: 'create-room', name: '  Sala permanente  ', password: ROOM_PASSWORD });
+  const created = creator.socket.take('room-created');
+  if (created.type !== 'room-created') throw new Error();
+  expect(created.roomName).toBe('Sala permanente');
+  expect(created.credential).not.toContain(ROOM_PASSWORD);
+
+  const wrong = connect(firstHub);
+  wrong.send({
+    type: 'join-room',
+    roomId: created.roomId,
+    credential: created.credential,
+    password: 'another-password',
+  });
+  expect(wrong.socket.take('room-access-denied')).toEqual({ type: 'room-access-denied', reason: 'wrong-password' });
+  expect(firstHub.rooms.has(created.roomId)).toBeFalse();
+  for (let attempt = 1; attempt < 5; attempt++) {
+    wrong.send({
+      type: 'join-room',
+      roomId: created.roomId,
+      credential: created.credential,
+      password: 'another-password',
+    });
+    expect(wrong.socket.take('room-access-denied').type).toBe('room-access-denied');
+  }
+  wrong.send({
+    type: 'join-room',
+    roomId: created.roomId,
+    credential: created.credential,
+    password: 'another-password',
+  });
+  expect(wrong.socket.take('room-access-denied')).toEqual({
+    type: 'room-access-denied',
+    reason: 'too-many-attempts',
+  });
+  expect(wrong.socket.closed).toBeTrue();
+
+  const tampered = connect(firstHub);
+  tampered.send({
+    type: 'join-room',
+    roomId: created.roomId,
+    credential: `${created.credential.slice(0, -1)}x`,
+    password: ROOM_PASSWORD,
+  });
+  expect(tampered.socket.take('room-access-denied')).toEqual({ type: 'room-access-denied', reason: 'invalid-invite' });
+  firstHub.close();
+
+  const restartedHub = new SignalingHub(ROOM_SECRET);
+  try {
+    const participant = connect(restartedHub);
+    participant.send({
+      type: 'join-room',
+      roomId: created.roomId,
+      credential: created.credential,
+      password: ROOM_PASSWORD,
+    });
+    const joined = participant.socket.take('joined');
+    expect(joined.type === 'joined' && joined.roomName).toBe('Sala permanente');
+
+    const foreignHub = new SignalingHub('different-room-token-secret-at-least-32-chars');
+    const foreign = connect(foreignHub);
+    foreign.send({
+      type: 'join-room',
+      roomId: created.roomId,
+      credential: created.credential,
+      password: ROOM_PASSWORD,
+    });
+    expect(foreign.socket.take('room-access-denied')).toEqual({
+      type: 'room-access-denied',
+      reason: 'invalid-invite',
+    });
+    foreignHub.close();
+  } finally {
+    restartedHub.close();
+  }
+});
+
 test('room subscriptions: one selection, reciprocal watching, isolation and independent lifecycle', () => {
-  const hub = new SignalingHub();
+  const hub = new SignalingHub(ROOM_SECRET);
   const connect = (): Peer => {
     const client = hub.createClient();
     const socket = new FakeSocket();
@@ -45,7 +150,7 @@ test('room subscriptions: one selection, reciprocal watching, isolation and inde
     return {
       client,
       socket,
-      send: message => hub.message(client, JSON.stringify(message)),
+      send: message => hub.message(client, JSON.stringify(authorized(message))),
       take: type => socket.take(type),
     };
   };
@@ -157,12 +262,12 @@ test('room subscriptions: one selection, reciprocal watching, isolation and inde
 });
 
 test('participant aliases: trimmed, capped, broadcast to the room and reset on leave', () => {
-  const hub = new SignalingHub();
+  const hub = new SignalingHub(ROOM_SECRET);
   const connect = () => {
     const client = hub.createClient();
     const socket = new FakeSocket();
     hub.open(client, socket);
-    return { client, socket, send: (message: unknown) => hub.message(client, JSON.stringify(message)) };
+    return { client, socket, send: (message: unknown) => hub.message(client, JSON.stringify(authorized(message))) };
   };
   const roomId = crypto.randomUUID();
   const join = () => {
@@ -209,7 +314,7 @@ test('participant aliases: trimmed, capped, broadcast to the room and reset on l
 });
 
 test('rate, payload and backpressure failures do not crash the hub', () => {
-  const hub = new SignalingHub();
+  const hub = new SignalingHub(ROOM_SECRET);
   const client = hub.createClient();
   const socket = new FakeSocket();
   hub.open(client, socket);
@@ -228,7 +333,7 @@ test('rate, payload and backpressure failures do not crash the hub', () => {
 });
 
 test('ping is answered with pong without needing a room', () => {
-  const hub = new SignalingHub();
+  const hub = new SignalingHub(ROOM_SECRET);
   const client = hub.createClient();
   const socket = new FakeSocket();
   hub.open(client, socket);
@@ -238,14 +343,14 @@ test('ping is answered with pong without needing a room', () => {
 });
 
 test('a reconnecting client reclaims its previous peer id', () => {
-  const hub = new SignalingHub();
+  const hub = new SignalingHub(ROOM_SECRET);
   const roomId = crypto.randomUUID();
   const clientId = crypto.randomUUID();
   const join = () => {
     const client = hub.createClient();
     const socket = new FakeSocket();
     hub.open(client, socket);
-    hub.message(client, JSON.stringify({ type: 'join-room', roomId, clientId }));
+    hub.message(client, JSON.stringify(authorized({ type: 'join-room', roomId, clientId })));
     return { client, socket };
   };
   try {

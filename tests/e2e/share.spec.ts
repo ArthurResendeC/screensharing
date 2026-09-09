@@ -11,6 +11,14 @@ const remoteVideo = (page: Page) => page.getByLabel('Transmissão selecionada', 
 const shareButton = (page: Page) => page.locator('[data-share]');
 const stopShareButton = (page: Page) => page.locator('[data-stop-share]');
 const participantCount = (page: Page) => page.locator('[data-participants]');
+const ROOM_PASSWORD = 'password-for-e2e';
+
+async function createProtectedRoom(page: Page, name = 'Sala E2E') {
+  await page.getByLabel('Nome da sala').fill(name);
+  await page.getByLabel('Senha', { exact: true }).fill(ROOM_PASSWORD);
+  await page.getByRole('button', { name: 'Criar sala' }).click();
+  await expect(page).toHaveURL(/\/room\//);
+}
 
 async function instrument(context: BrowserContext) {
   await context.addInitScript(() => {
@@ -126,6 +134,12 @@ async function capture(page: Page, color: string, withAudio = true) {
   );
 }
 async function enterRoom(page: Page, name?: string) {
+  const passwordGate = page.locator('[data-password-gate]');
+  if (await passwordGate.isVisible()) {
+    await page.getByLabel('Senha da sala').fill(ROOM_PASSWORD);
+    await passwordGate.getByRole('button', { name: 'Entrar', exact: true }).click();
+    await expect(passwordGate).toBeHidden();
+  }
   const gate = page.locator('[data-name-gate]');
   // Wait for the controller to render before reading the gate: a stored alias keeps it
   // hidden and there is nothing to do, otherwise fill the name and enter.
@@ -197,6 +211,36 @@ async function cleared(page: Page) {
   await expect.poll(() => remoteVideo(page).evaluate((video: HTMLVideoElement) => video.srcObject === null)).toBe(true);
 }
 
+test('protected room validates its password and each browser manages its own favorite', async ({ page, browser }) => {
+  await page.goto('/');
+  await createProtectedRoom(page, 'Planejamento semanal');
+  await enterRoom(page, 'Criador');
+  await expect(page.getByText('Planejamento semanal', { exact: true })).toBeVisible();
+  const invite = page.url();
+  expect(invite).toContain('#credential=');
+  expect(invite).not.toContain(ROOM_PASSWORD);
+
+  const participantContext = await browser.newContext();
+  const participant = await participantContext.newPage();
+  await participant.goto(invite);
+  await participant.getByLabel('Senha da sala').fill('wrong-password');
+  await participant.getByRole('button', { name: 'Entrar', exact: true }).click();
+  await expect(participant.getByText('Senha incorreta. Tente novamente.')).toBeVisible();
+  await participant.getByLabel('Senha da sala').fill(ROOM_PASSWORD);
+  await participant.getByRole('button', { name: 'Entrar', exact: true }).click();
+  await enterRoom(participant, 'Convidado');
+  await participant.getByRole('button', { name: 'Favoritar', exact: true }).click();
+  await expect(participant.getByRole('button', { name: 'Favoritada', exact: true })).toBeVisible();
+  expect(
+    await participant.evaluate(password => Object.values(localStorage).join(' ').includes(password), ROOM_PASSWORD),
+  ).toBe(false);
+
+  await participant.goto('/');
+  await expect(participant.getByText('Salas favoritas', { exact: true })).toBeVisible();
+  await expect(participant.getByText('Planejamento semanal', { exact: true })).toBeVisible();
+  await participantContext.close();
+});
+
 test('five participants: simultaneous publishing, reciprocal watching and one remote stream through switches', async ({
   page: a,
   context,
@@ -207,7 +251,7 @@ test('five participants: simultaneous publishing, reciprocal watching and one re
   a.on('pageerror', error => errors.push(error.message));
   await capture(a, '#ff0000');
   await a.goto('/');
-  await a.getByRole('button', { name: 'Criar sala' }).click();
+  await createProtectedRoom(a);
   await enterRoom(a);
   const aName = await identity(a);
   const url = a.url();
@@ -311,7 +355,7 @@ test('participant aliases replace the default name for everyone and survive reco
 }) => {
   await capture(a, '#ff0000');
   await a.goto('/');
-  await a.getByRole('button', { name: 'Criar sala' }).click();
+  await createProtectedRoom(a, 'Sala da Alice');
   // The name gate is the first thing shown on entry.
   await enterRoom(a, 'Alice');
   await expect(a.getByText('Você: Alice', { exact: true })).toBeVisible();
@@ -359,7 +403,7 @@ test('a single lost signaling socket reconnects on its own and resumes sharing a
   await instrument(context);
   await capture(a, '#ff0000');
   await a.goto('/');
-  await a.getByRole('button', { name: 'Criar sala' }).click();
+  await createProtectedRoom(a);
   await enterRoom(a);
   const aName = await identity(a);
   const b = await context.newPage();
@@ -391,7 +435,7 @@ test('a pure publisher whose socket drops keeps publishing to its viewer after r
   await instrument(context);
   await capture(a, '#ff0000');
   await a.goto('/');
-  await a.getByRole('button', { name: 'Criar sala' }).click();
+  await createProtectedRoom(a);
   await enterRoom(a);
   const aName = await identity(a);
   const b = await context.newPage();
@@ -420,7 +464,7 @@ test('a redeploy drops every socket at once and the room restores itself without
   a.on('pageerror', error => errors.push(error.message));
   await capture(a, '#ff0000');
   await a.goto('/');
-  await a.getByRole('button', { name: 'Criar sala' }).click();
+  await createProtectedRoom(a);
   await enterRoom(a);
   const aName = await identity(a);
   const b = await context.newPage();

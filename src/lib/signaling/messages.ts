@@ -2,6 +2,19 @@ import { z } from 'zod';
 
 export const roomIdSchema = z.string().uuid();
 const id = z.string().uuid();
+export const ROOM_NAME_MAX_LENGTH = 64;
+export const ROOM_PASSWORD_MIN_LENGTH = 8;
+export const ROOM_PASSWORD_MAX_LENGTH = 128;
+export const ROOM_CREDENTIAL_MAX_LENGTH = 2048;
+export const roomNameSchema = z
+  .string()
+  .max(2000)
+  .trim()
+  .min(1)
+  .transform(value => value.normalize('NFC'))
+  .pipe(z.string().max(ROOM_NAME_MAX_LENGTH));
+export const roomPasswordSchema = z.string().min(ROOM_PASSWORD_MIN_LENGTH).max(ROOM_PASSWORD_MAX_LENGTH);
+export const roomCredentialSchema = z.string().min(1).max(ROOM_CREDENTIAL_MAX_LENGTH);
 const candidateSchema = z
   .object({
     candidate: z.string().max(4096),
@@ -39,7 +52,16 @@ const participant = z
 export type Participant = z.infer<typeof participant>;
 
 export const clientMessageSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('join-room'), roomId: roomIdSchema, clientId: id.optional() }).strict(),
+  z.object({ type: z.literal('create-room'), name: roomNameSchema, password: roomPasswordSchema }).strict(),
+  z
+    .object({
+      type: z.literal('join-room'),
+      roomId: roomIdSchema,
+      credential: roomCredentialSchema,
+      password: roomPasswordSchema,
+      clientId: id.optional(),
+    })
+    .strict(),
   offer,
   answer,
   ice,
@@ -52,7 +74,20 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 export type RelayMessage = Extract<ClientMessage, { targetPeerId: string }>;
 export const serverMessageSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('joined'), roomId: id, peerId: id, peers: z.array(participant).max(5) }),
+  z.object({ type: z.literal('room-created'), roomId: id, roomName: roomNameSchema, credential: roomCredentialSchema }),
+  z.object({
+    type: z.literal('joined'),
+    roomId: id,
+    roomName: roomNameSchema,
+    peerId: id,
+    peers: z.array(participant).max(5),
+  }),
+  z
+    .object({
+      type: z.literal('room-access-denied'),
+      reason: z.enum(['invalid-invite', 'wrong-password', 'too-many-attempts']),
+    })
+    .strict(),
   z.object({ type: z.literal('room-state'), peers: z.array(participant).max(5) }),
   z.object({ type: z.literal('watching'), peerId: id.nullable(), sessionId: id }),
   z.object({ type: z.literal('subscriber-joined'), peerId: id, sessionId: id }),
