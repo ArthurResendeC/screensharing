@@ -15,13 +15,16 @@ import { Room } from './room';
 import { RoomPasswordGate } from './components/roomModals';
 import {
   findStoredInvite,
+  findRoomAccess,
   inviteUrl,
   listFavoriteRooms,
   parseInvite,
   recallRecentRoom,
   removeFavoriteRoom,
+  roomPasswordProtected,
   saveFavoriteRoom,
   type RoomInvite,
+  validRoomAccessToken,
 } from './roomStorage';
 import './styles.css';
 import { applyTheme, loadTheme, type Theme } from './theme';
@@ -62,6 +65,21 @@ function roomIdFromPath() {
   }
 }
 
+function inviteFromLocation(roomId: string) {
+  const incoming = parseInvite(location.href);
+  const stored = roomIdSchema.safeParse(roomId).success ? findStoredInvite(roomId) : null;
+  if (!incoming) return stored;
+  const access =
+    stored?.credential === incoming.credential ? stored : findRoomAccess(incoming.roomId, incoming.credential);
+  return access
+    ? {
+        ...incoming,
+        accessToken: access.accessToken,
+        accessTokenExpiresAt: access.accessTokenExpiresAt,
+      }
+    : incoming;
+}
+
 type OpenRoom = (invite: RoomInvite, password?: string) => void;
 
 function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
@@ -92,9 +110,13 @@ function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const parsedName = roomNameSchema.safeParse(form.get('room-name'));
-    const parsedPassword = roomPasswordSchema.safeParse(form.get('room-password'));
+    const passwordValue = form.get('room-password');
+    const parsedPassword =
+      passwordValue === '' ? { success: true as const, data: undefined } : roomPasswordSchema.safeParse(passwordValue);
     if (!parsedName.success || !parsedPassword.success) {
-      setError(`Use um nome e uma senha entre ${ROOM_PASSWORD_MIN_LENGTH} e ${ROOM_PASSWORD_MAX_LENGTH} caracteres.`);
+      setError(
+        `Informe um nome e, se quiser proteger a sala, use uma senha entre ${ROOM_PASSWORD_MIN_LENGTH} e ${ROOM_PASSWORD_MAX_LENGTH} caracteres.`,
+      );
       return;
     }
     setCreating(true);
@@ -137,7 +159,7 @@ function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
         <h2>Criar sala</h2>
         <label htmlFor="room-name">Nome da sala</label>
         <input id="room-name" name="room-name" maxLength={ROOM_NAME_MAX_LENGTH} required />
-        <label htmlFor="new-room-password">Senha</label>
+        <label htmlFor="new-room-password">Senha (opcional)</label>
         <input
           id="new-room-password"
           name="room-password"
@@ -145,7 +167,6 @@ function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
           minLength={ROOM_PASSWORD_MIN_LENGTH}
           maxLength={ROOM_PASSWORD_MAX_LENGTH}
           autoComplete="new-password"
-          required
         />
         <button type="submit" className="btn btn-primary" disabled={creating}>
           {creating ? 'Criando…' : 'Criar sala'}
@@ -220,8 +241,7 @@ function App() {
   const [route, setRoute] = useState(() => {
     const roomId = roomIdFromPath();
     if (roomId === null) return null;
-    const invite =
-      parseInvite(location.href) ?? (roomIdSchema.safeParse(roomId).success ? findStoredInvite(roomId) : null);
+    const invite = inviteFromLocation(roomId);
     return { roomId, invite, password: undefined as string | undefined };
   });
 
@@ -232,8 +252,7 @@ function App() {
       else
         setRoute({
           roomId,
-          invite:
-            parseInvite(location.href) ?? (roomIdSchema.safeParse(roomId).success ? findStoredInvite(roomId) : null),
+          invite: inviteFromLocation(roomId),
           password: undefined,
         });
     };
@@ -249,11 +268,23 @@ function App() {
   let page;
   if (!route) page = <Lobby onOpenRoom={openRoom} />;
   else if (!roomIdSchema.safeParse(route.roomId).success || !route.invite) page = <InvalidRoom />;
-  else if (!route.password)
+  else if (
+    roomPasswordProtected(route.invite.credential) === true &&
+    !route.password &&
+    !validRoomAccessToken(route.invite)
+  )
     page = (
       <RoomPasswordGate onSubmit={password => setRoute(current => (current ? { ...current, password } : current))} />
     );
-  else page = <Room roomId={route.roomId} credential={route.invite.credential} password={route.password} />;
+  else
+    page = (
+      <Room
+        roomId={route.roomId}
+        credential={route.invite.credential}
+        password={route.password}
+        accessToken={validRoomAccessToken(route.invite)}
+      />
+    );
   return (
     <Fragment>
       {!online && (

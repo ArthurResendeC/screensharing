@@ -8,7 +8,8 @@ const PONG_TIMEOUT_MS = 20_000;
 export function connectSignaling(
   roomId: string,
   credential: string,
-  password: string,
+  password: string | undefined,
+  accessToken: string | undefined,
   clientId: string,
   onMessage: (message: ServerMessage) => void,
   onState: (state: string) => void,
@@ -47,7 +48,14 @@ export function connectSignaling(
 
   socket.onopen = () => {
     onState('connected');
-    send({ type: 'join-room', roomId, credential, password, ...(clientId ? { clientId } : {}) });
+    send({
+      type: 'join-room',
+      roomId,
+      credential,
+      ...(password ? { password } : {}),
+      ...(accessToken ? { accessToken } : {}),
+      ...(clientId ? { clientId } : {}),
+    });
     startHeartbeat();
   };
   socket.onmessage = (event: MessageEvent<unknown>) => {
@@ -80,7 +88,7 @@ export function connectSignaling(
   };
 }
 
-export function createRoom(name: string, password: string) {
+export function createRoom(name: string, password?: string) {
   return new Promise<Extract<ServerMessage, { type: 'room-created' }>>((resolve, reject) => {
     const url = new URL('/signaling', location.href);
     url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -94,7 +102,7 @@ export function createRoom(name: string, password: string) {
       if (error) reject(error);
       else if (room) resolve(room);
     };
-    socket.onopen = () => socket.send(JSON.stringify({ type: 'create-room', name, password }));
+    socket.onopen = () => socket.send(JSON.stringify({ type: 'create-room', name, ...(password ? { password } : {}) }));
     socket.onmessage = event => {
       try {
         if (typeof event.data !== 'string') throw new Error();

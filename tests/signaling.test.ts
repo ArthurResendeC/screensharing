@@ -1,7 +1,7 @@
 import { test, expect } from 'bun:test';
 import { serverMessageSchema, type ServerMessage } from '../src/lib/signaling/messages';
 import { SignalingHub, type Client, type SignalingSocket } from '../server/signaling';
-import { issueRoomCredential } from '../server/roomCredentials';
+import { issueRoomAccessToken, issueRoomCredential } from '../server/roomCredentials';
 
 const ROOM_SECRET = 'test-room-token-secret-at-least-32-characters';
 const ROOM_PASSWORD = 'correct horse battery staple';
@@ -69,6 +69,7 @@ test('signed rooms preserve their name across hubs and reject invalid access', (
   const created = creator.socket.take('room-created');
   if (created.type !== 'room-created') throw new Error();
   expect(created.roomName).toBe('Sala permanente');
+  expect(created.passwordProtected).toBeTrue();
   expect(created.credential).not.toContain(ROOM_PASSWORD);
 
   const wrong = connect(firstHub);
@@ -122,6 +123,32 @@ test('signed rooms preserve their name across hubs and reject invalid access', (
     });
     const joined = participant.socket.take('joined');
     expect(joined.type === 'joined' && joined.roomName).toBe('Sala permanente');
+    if (joined.type !== 'joined') throw new Error();
+    expect(joined.passwordProtected).toBeTrue();
+    expect(joined.accessToken).not.toBeNull();
+    expect(joined.accessTokenExpiresAt).toBeGreaterThan(Date.now());
+
+    restartedHub.leave(participant.client);
+    const remembered = connect(restartedHub);
+    remembered.send({
+      type: 'join-room',
+      roomId: created.roomId,
+      credential: created.credential,
+      accessToken: joined.accessToken,
+    });
+    expect(remembered.socket.take('joined').type).toBe('joined');
+
+    const expired = connect(restartedHub);
+    expired.send({
+      type: 'join-room',
+      roomId: created.roomId,
+      credential: created.credential,
+      accessToken: issueRoomAccessToken(ROOM_SECRET, created.roomId, 0).token,
+    });
+    expect(expired.socket.take('room-access-denied')).toEqual({
+      type: 'room-access-denied',
+      reason: 'password-required',
+    });
 
     const foreignHub = new SignalingHub('different-room-token-secret-at-least-32-chars');
     const foreign = connect(foreignHub);
@@ -138,6 +165,33 @@ test('signed rooms preserve their name across hubs and reject invalid access', (
     foreignHub.close();
   } finally {
     restartedHub.close();
+  }
+});
+
+test('rooms without a password can be joined directly and do not issue access tokens', () => {
+  const hub = new SignalingHub(ROOM_SECRET);
+  const connect = () => {
+    const client = hub.createClient();
+    const socket = new FakeSocket();
+    hub.open(client, socket);
+    return { socket, send: (message: unknown) => hub.message(client, JSON.stringify(message)) };
+  };
+  try {
+    const creator = connect();
+    creator.send({ type: 'create-room', name: 'Sala pública' });
+    const created = creator.socket.take('room-created');
+    if (created.type !== 'room-created') throw new Error();
+    expect(created.passwordProtected).toBeFalse();
+
+    const participant = connect();
+    participant.send({ type: 'join-room', roomId: created.roomId, credential: created.credential });
+    const joined = participant.socket.take('joined');
+    if (joined.type !== 'joined') throw new Error();
+    expect(joined.passwordProtected).toBeFalse();
+    expect(joined.accessToken).toBeNull();
+    expect(joined.accessTokenExpiresAt).toBeNull();
+  } finally {
+    hub.close();
   }
 });
 

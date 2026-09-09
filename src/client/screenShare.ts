@@ -8,7 +8,7 @@ import {
 import { Peers } from '../lib/webrtc/peers';
 import { setVideoDegradation, type VideoDegradation } from '../lib/webrtc/rtcConfiguration';
 import { displayName, participantName } from './participantPresentation';
-import { inviteUrl, rememberRecentRoom } from './roomStorage';
+import { inviteUrl, rememberRoomAccess } from './roomStorage';
 import { playSound, unlockSounds } from './sounds';
 import { loadTheme, type Theme } from './theme';
 
@@ -80,8 +80,11 @@ export type ScreenShareState = {
   watcherIds: string[];
   error: string;
   joinError: string;
-  accessError: '' | 'invalid-invite' | 'wrong-password' | 'too-many-attempts';
+  accessError: '' | 'invalid-invite' | 'password-required' | 'wrong-password' | 'too-many-attempts';
   roomName: string;
+  passwordProtected: boolean;
+  accessToken?: string;
+  accessTokenExpiresAt?: number;
   endedReason: EndedReason;
   endedPeerId: string | null;
   theme: Theme;
@@ -127,6 +130,7 @@ export class ScreenShareController {
     joinError: '',
     accessError: '',
     roomName: '',
+    passwordProtected: false,
     endedReason: null,
     endedPeerId: null,
     theme: loadTheme(),
@@ -140,7 +144,8 @@ export class ScreenShareController {
   constructor(
     private readonly roomId: string,
     private readonly credential: string,
-    private roomPassword: string,
+    private roomPassword?: string,
+    private roomAccessToken?: string,
   ) {}
 
   getSnapshot = () => this.state;
@@ -250,6 +255,7 @@ export class ScreenShareController {
     const session = this.session;
     if (!session?.channel || session.disposed || this.state.accessError === 'too-many-attempts') return;
     this.roomPassword = password;
+    this.roomAccessToken = undefined;
     this.accessTerminal = false;
     this.update({ accessError: '', joinError: '' });
     session.channel.send({
@@ -531,6 +537,7 @@ export class ScreenShareController {
         this.roomId,
         this.credential,
         this.roomPassword,
+        this.roomAccessToken,
         this.clientId,
         message => {
           queue = queue.then(() => this.receive(session, message)).catch(reportError);
@@ -592,8 +599,23 @@ export class ScreenShareController {
       case 'joined':
         session.joined = true;
         this.reconnectAttempts = 0;
-        rememberRecentRoom({ roomId: message.roomId, roomName: message.roomName, credential: this.credential });
-        this.update({ selfId: message.peerId, roomName: message.roomName, accessError: '', error: '' });
+        this.roomAccessToken = message.accessToken ?? undefined;
+        rememberRoomAccess({
+          roomId: message.roomId,
+          roomName: message.roomName,
+          credential: this.credential,
+          ...(message.accessToken ? { accessToken: message.accessToken } : {}),
+          ...(message.accessTokenExpiresAt ? { accessTokenExpiresAt: message.accessTokenExpiresAt } : {}),
+        });
+        this.update({
+          selfId: message.peerId,
+          roomName: message.roomName,
+          passwordProtected: message.passwordProtected,
+          accessToken: message.accessToken ?? undefined,
+          accessTokenExpiresAt: message.accessTokenExpiresAt ?? undefined,
+          accessError: '',
+          error: '',
+        });
         this.updateMembers(session, message.peers);
         if (this.state.alias) session.channel.send({ type: 'set-alias', alias: this.state.alias });
         this.resumeAfterReconnect(session, message.peers);

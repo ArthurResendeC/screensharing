@@ -2,8 +2,8 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { ScreenShareController } from '../screenShare';
 import { applyTheme } from '../theme';
 
-export function useScreenShareController(roomId: string, credential: string, password: string) {
-  const [controller] = useState(() => new ScreenShareController(roomId, credential, password));
+export function useScreenShareController(roomId: string, credential: string, password?: string, accessToken?: string) {
+  const [controller] = useState(() => new ScreenShareController(roomId, credential, password, accessToken));
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
 
   useEffect(() => {

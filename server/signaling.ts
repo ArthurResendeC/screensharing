@@ -1,5 +1,11 @@
 import { clientMessageSchema, type ServerMessage } from '../src/lib/signaling/messages';
-import { issueRoomCredential, verifyRoomCredential } from './roomCredentials';
+import {
+  issueRoomAccessToken,
+  issueRoomCredential,
+  verifyRoomAccessToken,
+  verifyRoomCredential,
+  verifyRoomPassword,
+} from './roomCredentials';
 
 export type SignalingSocket = {
   send(message: string): number;
@@ -151,6 +157,7 @@ export class SignalingHub {
         roomId,
         roomName: message.name,
         credential: issueRoomCredential(this.roomTokenSecret, roomId, message.name, message.password),
+        passwordProtected: Boolean(message.password),
       });
       return;
     }
@@ -164,11 +171,33 @@ export class SignalingHub {
         client.socket?.close(1008, 'Too many room access attempts');
         return;
       }
-      const verified = verifyRoomCredential(this.roomTokenSecret, message.roomId, message.credential, message.password);
+      const verified = verifyRoomCredential(this.roomTokenSecret, message.roomId, message.credential);
       if (!verified.ok) {
         client.failedRoomAttempts++;
         this.send(client, { type: 'room-access-denied', reason: verified.reason });
         return;
+      }
+      let accessToken: string | null = null;
+      let accessTokenExpiresAt: number | null = null;
+      if (verified.room.passwordProof) {
+        const access = message.accessToken
+          ? verifyRoomAccessToken(this.roomTokenSecret, message.roomId, message.accessToken)
+          : null;
+        if (access) {
+          accessToken = message.accessToken ?? null;
+          accessTokenExpiresAt = access.expiresAt;
+        } else if (message.password && verifyRoomPassword(this.roomTokenSecret, verified.room, message.password)) {
+          const issued = issueRoomAccessToken(this.roomTokenSecret, message.roomId);
+          accessToken = issued.token;
+          accessTokenExpiresAt = issued.expiresAt;
+        } else {
+          client.failedRoomAttempts++;
+          this.send(client, {
+            type: 'room-access-denied',
+            reason: message.password ? 'wrong-password' : 'password-required',
+          });
+          return;
+        }
       }
       let room = this.rooms.get(message.roomId);
       if (!room) {
@@ -188,6 +217,9 @@ export class SignalingHub {
         type: 'joined',
         roomId: message.roomId,
         roomName: room.name,
+        passwordProtected: Boolean(verified.room.passwordProof),
+        accessToken,
+        accessTokenExpiresAt,
         peerId: client.id,
         peers: this.participants(room),
       });

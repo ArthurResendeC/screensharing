@@ -6,13 +6,30 @@ import { RoomStage } from './components/roomStage';
 import { useScreenShareController } from './hooks/useScreenShareController';
 import { isFavoriteRoom, removeFavoriteRoom, saveFavoriteRoom } from './roomStorage';
 
-export function Room({ roomId, credential, password }: { roomId: string; credential: string; password: string }) {
-  const { controller, state } = useScreenShareController(roomId, credential, password);
+export function Room({
+  roomId,
+  credential,
+  password,
+  accessToken,
+}: {
+  roomId: string;
+  credential: string;
+  password?: string;
+  accessToken?: string;
+}) {
+  const { controller, state } = useScreenShareController(roomId, credential, password, accessToken);
   const [debugOpen, setDebugOpen] = useState(false);
   const [favorite, setFavorite] = useState(() => isFavoriteRoom(roomId));
   const toggleFavorite = () => {
     if (favorite) removeFavoriteRoom(roomId);
-    else if (state.roomName) saveFavoriteRoom({ roomId, roomName: state.roomName, credential });
+    else if (state.roomName)
+      saveFavoriteRoom({
+        roomId,
+        roomName: state.roomName,
+        credential,
+        ...(state.accessToken ? { accessToken: state.accessToken } : {}),
+        ...(state.accessTokenExpiresAt ? { accessTokenExpiresAt: state.accessTokenExpiresAt } : {}),
+      });
     setFavorite(value => !value);
   };
 

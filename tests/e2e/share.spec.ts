@@ -15,7 +15,7 @@ const ROOM_PASSWORD = 'password-for-e2e';
 
 async function createProtectedRoom(page: Page, name = 'Sala E2E') {
   await page.getByLabel('Nome da sala').fill(name);
-  await page.getByLabel('Senha', { exact: true }).fill(ROOM_PASSWORD);
+  await page.getByLabel('Senha (opcional)', { exact: true }).fill(ROOM_PASSWORD);
   await page.getByRole('button', { name: 'Criar sala' }).click();
   await expect(page).toHaveURL(/\/room\//);
 }
@@ -216,6 +216,7 @@ test('protected room validates its password and each browser manages its own fav
   await createProtectedRoom(page, 'Planejamento semanal');
   await enterRoom(page, 'Criador');
   await expect(page.getByText('Planejamento semanal', { exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Abrir sala favorita Planejamento semanal' })).toBeVisible();
   const invite = page.url();
   expect(invite).toContain('#credential=');
   expect(invite).not.toContain(ROOM_PASSWORD);
@@ -223,6 +224,7 @@ test('protected room validates its password and each browser manages its own fav
   const participantContext = await browser.newContext();
   const participant = await participantContext.newPage();
   await participant.goto(invite);
+  await expect(participant.getByRole('link', { name: 'Voltar ao início' })).toBeVisible();
   await participant.getByLabel('Senha da sala').fill('wrong-password');
   await participant.getByRole('button', { name: 'Entrar', exact: true }).click();
   await expect(participant.getByText('Senha incorreta. Tente novamente.')).toBeVisible();
@@ -237,8 +239,20 @@ test('protected room validates its password and each browser manages its own fav
 
   await participant.goto('/');
   await expect(participant.getByText('Salas favoritas', { exact: true })).toBeVisible();
-  await expect(participant.getByText('Planejamento semanal', { exact: true })).toBeVisible();
+  await participant.getByText('Planejamento semanal', { exact: true }).click();
+  await expect(participant.locator('[data-password-gate]')).toHaveCount(0);
+  await expect(participant.locator('[data-participants]')).toHaveText('2 / 5');
   await participantContext.close();
+});
+
+test('creates and enters a room without a password', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Nome da sala').fill('Sala sem senha');
+  await page.getByRole('button', { name: 'Criar sala' }).click();
+  await expect(page).toHaveURL(/\/room\//);
+  await enterRoom(page, 'Visitante');
+  await expect(page.locator('[data-password-gate]')).toHaveCount(0);
+  await expect(page.getByText('Sala sem senha', { exact: true })).toBeVisible();
 });
 
 test('five participants: simultaneous publishing, reciprocal watching and one remote stream through switches', async ({

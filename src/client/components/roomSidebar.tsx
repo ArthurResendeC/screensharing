@@ -2,9 +2,10 @@ import { useState, type CSSProperties } from 'react';
 import { ALIAS_MAX_LENGTH } from '../../lib/signaling/messages';
 import { isVideoCodecSupported, type VideoCodecPreference, VIDEO_CODEC_PREFERENCES } from '../../lib/webrtc/codecs';
 import { ACCENTS, type ScreenShareController, type ScreenShareState } from '../screenShare';
+import { inviteUrl, listFavoriteRooms } from '../roomStorage';
 import { avatarColor, initialsOf, participantName } from '../participantPresentation';
 import { ParticipantList } from './roomParticipants';
-import { ArrowLeftIcon, GearIcon, LeaveIcon, ScreenIcon } from './icons';
+import { ArrowLeftIcon, GearIcon, LeaveIcon, ScreenIcon, StarIcon } from './icons';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 type Props = { roomId: string; state: ScreenShareState; controller: ScreenShareController; onDebug: () => void };
@@ -46,6 +47,20 @@ export function RoomSidebar({ roomId, state, controller, onDebug }: Props) {
         <div className="logo">
           <ScreenIcon />
         </div>
+        <div className="rail-sep" />
+        <nav className="rail-favorites" aria-label="Salas favoritas">
+          {listFavoriteRooms().map(room => (
+            <a
+              key={room.roomId}
+              className={`rail-btn${room.roomId === roomId ? ' is-active' : ''}`}
+              href={inviteUrl(room)}
+              title={room.roomName}
+              aria-label={`Abrir sala favorita ${room.roomName}`}
+            >
+              <StarIcon filled />
+            </a>
+          ))}
+        </nav>
         <div className="rail-sep" />
         <a className="rail-btn rail-btn-danger" href="/" title="Sair da sala">
           <ArrowLeftIcon />

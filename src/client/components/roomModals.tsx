@@ -52,11 +52,13 @@ export function RoomPasswordGate({
   const message =
     error === 'wrong-password'
       ? 'Senha incorreta. Tente novamente.'
-      : error === 'invalid-invite'
-        ? 'Este convite está ausente, inválido ou foi alterado.'
-        : error === 'too-many-attempts'
-          ? 'Muitas tentativas incorretas. Abra o convite novamente para tentar mais tarde.'
-          : '';
+      : error === 'password-required'
+        ? 'Seu acesso salvo expirou ou não é mais válido. Digite a senha novamente.'
+        : error === 'invalid-invite'
+          ? 'Este convite está ausente, inválido ou foi alterado.'
+          : error === 'too-many-attempts'
+            ? 'Muitas tentativas incorretas. Abra o convite novamente para tentar mais tarde.'
+            : '';
   return (
     <div className="name-gate" data-password-gate>
       <form className="name-gate-card" onSubmit={submit}>
@@ -64,7 +66,13 @@ export function RoomPasswordGate({
           <ScreenIcon />
         </div>
         <h2>{terminal ? 'Não foi possível entrar' : 'Sala protegida'}</h2>
-        <p>{terminal ? message : 'Digite a senha compartilhada pelo criador. Ela não será salva neste navegador.'}</p>
+        <p>
+          {terminal
+            ? message
+            : error === 'password-required'
+              ? message
+              : 'Digite a senha compartilhada pelo criador. Ela não será salva neste navegador.'}
+        </p>
         {!terminal && (
           <input
             autoFocus
@@ -83,9 +91,14 @@ export function RoomPasswordGate({
             Voltar ao início
           </a>
         ) : (
-          <button type="submit" className="btn btn-primary">
-            Entrar
-          </button>
+          <div className="modal-actions">
+            <button type="submit" className="btn btn-primary">
+              Entrar
+            </button>
+            <a className="btn btn-outline" href="/">
+              Voltar ao início
+            </a>
+          </div>
         )}
       </form>
     </div>

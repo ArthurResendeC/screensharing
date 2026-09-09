@@ -297,6 +297,21 @@ code,
   background: var(--border);
   margin: 4px 0;
 }
+.rail-favorites {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.rail-favorites::-webkit-scrollbar {
+  display: none;
+}
+.rail .rail-btn.is-active {
+  color: var(--accent);
+  box-shadow: inset 3px 0 var(--accent);
+}
 .rail .rail-btn {
   width: 46px;
   height: 46px;

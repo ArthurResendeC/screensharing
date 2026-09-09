@@ -32,9 +32,9 @@ O processo deve iniciar a partir da raiz; o script `start` entra em `dist` para 
 
 ## Uso
 
-1. Informe um nome e uma senha e clique em **Criar sala**. Compartilhe o link e a senha separadamente.
-2. Quem abrir o convite informa a senha. Ela permanece somente na memória da aba e será solicitada novamente após reload ou em outra aba.
-3. A sala criada é favoritada automaticamente. Outros participantes podem favoritá-la pelo botão da sala; nome e convite ficam no `localStorage` do navegador, mas a senha não.
+1. Informe um nome, escolha opcionalmente uma senha e clique em **Criar sala**. Nas salas protegidas, compartilhe o link e a senha separadamente.
+2. Quem abrir um convite protegido informa a senha uma vez. Após a entrada, o navegador guarda um token de acesso por 30 dias; a senha em si nunca é salva pelo ReShare.
+3. A sala criada é favoritada automaticamente. Outros participantes podem favoritá-la pelo botão da sala; os favoritos também aparecem como atalhos na barra lateral.
 4. Ao entrar na sala, escolha em **Seu nome na sala** um apelido (até 32 caracteres) que substitui o nome padrão `Participante <id>` para todos. O valor fica salvo no navegador, é reenviado ao reconectar e pode ser alterado depois em **Configurações**.
 5. Qualquer participante pode clicar em **Compartilhar tela** e escolher tela, janela ou aba. Marque áudio no seletor quando disponível.
 6. Escolha uma pessoa que esteja transmitindo na barra lateral ou no seletor de telas. Trocar a seleção fecha a recepção anterior.
@@ -69,7 +69,7 @@ Para duas máquinas, use o domínio HTTPS do Railway ou outro domínio com TLS v
 
 ## Fluxo WebRTC
 
-`create-room` gera um UUID e uma credencial assinada contendo o nome imutável e um verificador protegido da senha. Em cada `join-room`, o servidor valida convite e senha antes de criar a representação em memória, gera um `peerId`, envia o snapshot e publica mudanças com `room-state`. Assim, o mesmo convite funciona depois que a sala fica vazia ou o servidor reinicia, desde que `ROOM_TOKEN_SECRET` não mude. `sharing-started` apenas anuncia disponibilidade; nenhuma mídia passa pelo servidor.
+`create-room` gera um UUID e uma credencial assinada contendo o nome imutável e, quando configurado, um verificador protegido da senha. Em cada `join-room`, o servidor valida o convite e aceita uma senha ou um token de acesso assinado ainda válido. O token dura 30 dias e fica salvo no navegador; a senha não. Depois da validação, o servidor cria a representação em memória, gera um `peerId`, envia o snapshot e publica mudanças com `room-state`. Assim, o mesmo convite funciona depois que a sala fica vazia ou o servidor reinicia, desde que `ROOM_TOKEN_SECRET` não mude. `sharing-started` apenas anuncia disponibilidade; nenhuma mídia passa pelo servidor.
 
 Ao selecionar um transmissor, o espectador envia `watch` com um `sessionId` novo e prepara uma conexão de recepção. O servidor confirma com `watching` e envia `subscriber-joined` ao transmissor. O transmissor cria uma conexão exclusiva para essa assinatura, adiciona as tracks, cria/aplica a offer e a envia. O espectador aplica a offer, cria/aplica a answer e devolve. ICE é enviado incrementalmente; candidatos que chegam antes de `remoteDescription` ficam em uma fila limitada e são aplicados depois do SDP.
 
@@ -109,7 +109,7 @@ Defina `ROOM_TOKEN_SECRET` com pelo menos 32 caracteres aleatórios e preserve o
 
 ## Limitações
 
-- Sem contas ou recuperação administrativa: quem possui convite e senha pode entrar; nome e senha da sala são imutáveis.
+- Sem contas ou recuperação administrativa: salas podem ser públicas ou protegidas; nome e eventual senha são imutáveis.
 - Participantes, identidades e seleções online desaparecem ao reiniciar o processo; convite e nome da sala permanecem válidos.
 - Favoritos pertencem somente ao perfil atual do navegador e desaparecem ao limpar os dados do site.
 - Uma réplica; escalar exige estado compartilhado e afinidade ou outro desenho de signaling.
