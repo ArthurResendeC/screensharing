@@ -4,6 +4,7 @@ import { CloseIcon, FullscreenIcon, PipIcon, VolumeIcon, VolumeMutedIcon, ZoomIn
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 3;
 const ZOOM_STEP = 0.25;
+const CONTROLS_IDLE_MS = 2500;
 
 type Props = { stream: MediaStream | null; label: string } & (
   | { local: true; onStopWatching?: never }
@@ -18,6 +19,7 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
   const player = useRef<HTMLDivElement>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
+  const controlsTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const drag = useRef<{ pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null>(null);
   const [blocked, setBlocked] = useState(false);
   const [muted, setMuted] = useState(local);
@@ -29,6 +31,25 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
   const [zoom, setZoom] = useState(MIN_ZOOM);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+
+  const showControls = useCallback(() => {
+    if (local || !stream) return;
+    if (controlsTimer.current) clearTimeout(controlsTimer.current);
+    setControlsVisible(true);
+    controlsTimer.current = setTimeout(() => {
+      controlsTimer.current = undefined;
+      if (!player.current?.contains(document.activeElement)) setControlsVisible(false);
+    }, CONTROLS_IDLE_MS);
+  }, [local, stream]);
+
+  useEffect(() => {
+    if (stream && !local) showControls();
+    return () => {
+      if (controlsTimer.current) clearTimeout(controlsTimer.current);
+      controlsTimer.current = undefined;
+    };
+  }, [local, showControls, stream]);
 
   const play = useCallback(async () => {
     try {
@@ -208,8 +229,14 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
   return (
     <div
       ref={player}
-      className={`media-player${local ? ' is-local' : ''}${zoom > MIN_ZOOM ? ' is-zoomed' : ''}${dragging ? ' is-dragging' : ''}`}
+      className={`media-player${local ? ' is-local' : ''}${controlsVisible ? ' is-controls-visible' : ' is-controls-hidden'}${zoom > MIN_ZOOM ? ' is-zoomed' : ''}${dragging ? ' is-dragging' : ''}`}
       hidden={!stream}
+      onPointerEnter={showControls}
+      onPointerMove={showControls}
+      onPointerDown={showControls}
+      onKeyDown={showControls}
+      onFocusCapture={showControls}
+      onBlurCapture={showControls}
     >
       <div
         ref={viewport}
@@ -235,7 +262,7 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
         </button>
       )}
       {!local && stream && (
-        <div className="media-controls">
+        <div className="media-controls" data-media-controls>
           <button type="button" className="media-control media-control-leave" onClick={stopWatching}>
             <CloseIcon /> <span>Deixar de assistir</span>
           </button>

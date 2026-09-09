@@ -16,11 +16,15 @@ export function RoomStage({
 }) {
   const connected = state.socketState === 'connected' && Boolean(state.selfId);
   const live = state.members.filter(member => member.sharing && member.peerId !== state.selfId);
-  const watching = Boolean(state.selectedId);
+  const watching = state.selectedIds.length > 0;
   const ended = Boolean(state.endedReason) && !watching;
   const connection = `Conexão: ${state.connectionState}${state.connectionState === 'failed' ? ' — tente reconectar à transmissão; esta rede pode exigir TURN.' : ''}`;
-  const title = state.selectedId ? controller.nameOf(state.selectedId) : 'Minha transmissão';
-  const subtitle = state.selectedId ? 'assistindo' : state.sharing ? 'transmitindo sua tela' : 'nenhuma tela ativa';
+  const title = watching ? state.selectedIds.map(peerId => controller.nameOf(peerId)).join(' + ') : 'Minha transmissão';
+  const subtitle = watching
+    ? `assistindo ${state.selectedIds.length} transmissão${state.selectedIds.length > 1 ? 'ões' : ''}`
+    : state.sharing
+      ? 'transmitindo sua tela'
+      : 'nenhuma tela ativa';
   const endedTitle = state.endedReason === 'remote' ? 'Transmissão encerrada' : 'Você encerrou o compartilhamento';
   const endedBody =
     state.endedReason === 'remote'
@@ -78,7 +82,7 @@ export function RoomStage({
                   <ScreenPicker
                     members={state.members}
                     selfId={state.selfId}
-                    selectedId={state.selectedId}
+                    selectedIds={state.selectedIds}
                     connected={connected}
                     onWatch={peerId => controller.watch(peerId)}
                   />
@@ -118,12 +122,30 @@ export function RoomStage({
               </div>
             </div>
           )}
-          <MediaVideo
-            stream={state.remoteStream}
-            label="Transmissão selecionada"
-            onStopWatching={() => controller.watch(null)}
-          />
+          {watching && (
+            <div className={`remote-stream-grid${state.selectedIds.length > 1 ? ' has-two' : ''}`}>
+              {state.selectedIds.map((peerId, index) => {
+                const remote = state.remoteStreams.find(item => item.peerId === peerId);
+                return (
+                  <div className="remote-stream-cell" key={peerId}>
+                    {!remote && (
+                      <span className="remote-stream-loading">Conectando a {controller.nameOf(peerId)}…</span>
+                    )}
+                    <MediaVideo
+                      stream={remote?.stream ?? null}
+                      label={index === 0 ? 'Transmissão selecionada' : 'Segunda transmissão selecionada'}
+                      onStopWatching={() => controller.watch(peerId)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
+        <p className="stream-limit-notice" role="note">
+          Até duas lives simultâneas. Assistir a duas pode dobrar o uso de internet e processamento; os áudios podem se
+          sobrepor. Silencie uma transmissão se necessário.
+        </p>
         <div className="action-bar">
           <button
             type="button"

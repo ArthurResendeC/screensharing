@@ -8,6 +8,7 @@ type TestWindow = Window & {
   testAutoPipHandler: (() => void) | null;
 };
 const remoteVideo = (page: Page) => page.getByLabel('Transmissão selecionada', { exact: true });
+const secondRemoteVideo = (page: Page) => page.getByLabel('Segunda transmissão selecionada', { exact: true });
 const shareButton = (page: Page) => page.locator('[data-share]');
 const stopShareButton = (page: Page) => page.locator('[data-stop-share]');
 const participantCount = (page: Page) => page.locator('[data-participants]');
@@ -178,7 +179,7 @@ async function playing(page: Page, color: 'red' | 'blue', audio: number) {
       }),
     )
     .toEqual({ color, audio, playing: true, muted: false });
-  await expect(page.getByText('Conexão: connected', { exact: true })).toBeVisible();
+  await expect(page.getByText('Conexão: 1/1 conectadas', { exact: true })).toBeVisible();
   if (audio) {
     await expect
       .poll(() =>
@@ -241,7 +242,7 @@ test('protected room validates its password and each browser manages its own fav
   await expect(participant.getByText('Salas favoritas', { exact: true })).toBeVisible();
   await participant.getByText('Planejamento semanal', { exact: true }).click();
   await expect(participant.locator('[data-password-gate]')).toHaveCount(0);
-  await expect(participant.locator('[data-participants]')).toHaveText('2 / 5');
+  await expect(participant.locator('[data-participants]')).toHaveText('2 / 10');
   await participantContext.close();
 });
 
@@ -260,7 +261,7 @@ test('creates and enters a room without a password', async ({ page }) => {
   await expect(page.getByText('Sala sem senha', { exact: true })).toBeVisible();
 });
 
-test('five participants: simultaneous publishing, reciprocal watching and one remote stream through switches', async ({
+test('five participants: simultaneous publishing, reciprocal watching and two remote streams', async ({
   page: a,
   context,
 }) => {
@@ -287,7 +288,7 @@ test('five participants: simultaneous publishing, reciprocal watching and one re
     await identity(viewer);
     viewers.push(viewer);
   }
-  await expect(participantCount(a)).toHaveText('5 / 5');
+  await expect(participantCount(a)).toHaveText('5 / 10');
   await shareButton(a).click();
   await shareButton(b).click();
   await expect(b.locator('[data-capture-info]')).toContainText('Sem áudio disponível nesta captura');
@@ -296,6 +297,10 @@ test('five participants: simultaneous publishing, reciprocal watching and one re
   await Promise.all([choose(a, bName), choose(b, aName)]);
   await playing(a, 'blue', 0);
   await playing(b, 'red', 1);
+  const bControls = b.locator('[data-media-controls]').first();
+  await expect.poll(() => bControls.evaluate(element => getComputedStyle(element).opacity)).toBe('0');
+  await remoteVideo(b).hover();
+  await expect.poll(() => bControls.evaluate(element => getComputedStyle(element).opacity)).toBe('1');
   await b.getByRole('button', { name: 'Aumentar zoom', exact: true }).click();
   await expect(b.getByRole('button', { name: 'Redefinir zoom, atualmente 125%', exact: true })).toBeEnabled();
   expect(await remoteVideo(b).evaluate((video: HTMLVideoElement) => video.style.transform)).toContain('scale(1.25)');
@@ -331,16 +336,28 @@ test('five participants: simultaneous publishing, reciprocal watching and one re
   await expect.poll(() => activeCounts(a)).toEqual({ sending: 4, receiving: 1, total: 5 });
   const c = viewers[0];
   await choose(c, bName);
+  await expect(secondRemoteVideo(c)).toBeVisible();
+  await expect
+    .poll(() =>
+      secondRemoteVideo(c).evaluate((video: HTMLVideoElement) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        const context = canvas.getContext('2d')!;
+        if (video.videoWidth) context.drawImage(video, 0, 0, 1, 1);
+        const [red, , blue] = context.getImageData(0, 0, 1, 1).data;
+        return { color: red > 150 ? 'red' : blue > 150 ? 'blue' : 'none', playing: !video.paused };
+      }),
+    )
+    .toEqual({ color: 'blue', playing: true });
+  await expect.poll(() => activeCounts(c)).toEqual({ sending: 0, receiving: 2, total: 2 });
+  await expect.poll(() => activeCounts(a)).toEqual({ sending: 4, receiving: 1, total: 5 });
+  await expect.poll(() => activeCounts(b)).toEqual({ sending: 2, receiving: 1, total: 3 });
+  // Each live can be stopped independently while the other remains connected.
+  await c.getByRole('button', { name: 'Deixar de assistir', exact: true }).first().click();
   await playing(c, 'blue', 0);
   await expect.poll(() => activeCounts(c)).toEqual({ sending: 0, receiving: 1, total: 1 });
   await expect.poll(() => activeCounts(a)).toEqual({ sending: 3, receiving: 1, total: 4 });
-  await expect.poll(() => activeCounts(b)).toEqual({ sending: 2, receiving: 1, total: 3 });
-  // Rapid changes discard pending negotiations without resurrecting an old selection.
-  await choose(c, aName);
-  await choose(c, bName);
-  await choose(c, aName);
-  await playing(c, 'red', 1);
-  await expect.poll(() => activeCounts(c)).toEqual({ sending: 0, receiving: 1, total: 1 });
   // Native stop only ends B's publication, preserving B's reception of A.
   await b.evaluate(() => {
     const track = (window as unknown as TestWindow).testTrack;
@@ -357,7 +374,7 @@ test('five participants: simultaneous publishing, reciprocal watching and one re
   await expect.poll(() => activeCounts(viewers[2])).toEqual({ sending: 0, receiving: 0, total: 0 });
   expect(await viewers[2].evaluate(() => (window as unknown as TestWindow).testAutoPipHandler)).toBeNull();
   await a.close(); // Creator leaving does not close the room or B's stream.
-  await expect(participantCount(b)).toHaveText('4 / 5');
+  await expect(participantCount(b)).toHaveText('4 / 10');
   await cleared(b);
   await playing(c, 'blue', 0);
   await choose(viewers[1], bName);
@@ -439,7 +456,7 @@ test('a single lost signaling socket reconnects on its own and resumes sharing a
   // B's socket drops. No button to press: B's session comes back on its own,
   // keeps the same captured screen, and re-selects the stream B was watching.
   await dropSignaling(b);
-  await expect(participantCount(b)).toHaveText('2 / 5');
+  await expect(participantCount(b)).toHaveText('2 / 10');
   await playing(b, 'red', 1);
   expect(await b.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');
   // A stayed connected and saw B leave; once B is back, A re-picks it in one click.
@@ -467,7 +484,7 @@ test('a pure publisher whose socket drops keeps publishing to its viewer after r
   // A only publishes — it is not watching anyone. Its socket drops; it must come
   // back on its own and re-announce the same screen so B's view recovers.
   await dropSignaling(a);
-  await expect(participantCount(a)).toHaveText('2 / 5');
+  await expect(participantCount(a)).toHaveText('2 / 10');
   expect(await a.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');
   await choose(b, aName);
   await playing(b, 'red', 1);
@@ -500,8 +517,8 @@ test('a redeploy drops every socket at once and the room restores itself without
   // Simulate a Railway deploy: the server drops, every client socket closes together.
   await Promise.all([dropSignaling(a), dropSignaling(b)]);
 
-  await expect(participantCount(a)).toHaveText('2 / 5');
-  await expect(participantCount(b)).toHaveText('2 / 5');
+  await expect(participantCount(a)).toHaveText('2 / 10');
+  await expect(participantCount(b)).toHaveText('2 / 10');
   // Both captures survived the reconnect, so nobody re-picks a screen.
   expect(await a.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');
   expect(await b.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');

@@ -219,7 +219,7 @@ test('a protected room accepts a single-character password', () => {
   }
 });
 
-test('room subscriptions: one selection, reciprocal watching, isolation and independent lifecycle', () => {
+test('room subscriptions: two selections, reciprocal watching, isolation and independent lifecycle', () => {
   const hub = new SignalingHub(ROOM_SECRET);
   const connect = (): Peer => {
     const client = hub.createClient();
@@ -246,9 +246,6 @@ test('room subscriptions: one selection, reciprocal watching, isolation and inde
     const c = join();
     const d = join();
     const e = join();
-    const extra = connect();
-    extra.send({ type: 'join-room', roomId });
-    expect(extra.take('error').type).toBe('error');
     a.send('{invalid');
     expect(a.take('error').type).toBe('error');
     a.send({ type: 'join-room', roomId });
@@ -292,9 +289,14 @@ test('room subscriptions: one selection, reciprocal watching, isolation and inde
     const ab = watch(a, b);
     const ba = watch(b, a);
     const cb = watch(c, b);
-    expect(a.take('subscription-ended')).toEqual({ type: 'subscription-ended', peerId: c.id, sessionId: ca });
-    expect(c.take('subscription-ended')).toEqual({ type: 'subscription-ended', peerId: a.id, sessionId: ca });
+    d.send({ type: 'sharing-started' });
+    const rejectedThird = crypto.randomUUID();
+    c.send({ type: 'watch', targetPeerId: d.id, sessionId: rejectedThird });
+    expect(c.take('watching')).toEqual({ type: 'watching', peerId: null, sessionId: rejectedThird });
+    expect(c.take('error').type).toBe('error');
+    expect(d.socket.inbox.filter(message => message.type === 'subscriber-joined')).toHaveLength(0);
     a.send(offer);
+    expect(c.take('offer').type).toBe('offer');
     b.send({ ...offer, sessionId: cb });
     const nextOffer = c.take('offer');
     expect(nextOffer.type === 'offer' && nextOffer.peerId === b.id && nextOffer.sessionId === cb).toBeTrue();
@@ -316,24 +318,40 @@ test('room subscriptions: one selection, reciprocal watching, isolation and inde
     hub.leave(a.client);
     const endedByA = b.take('subscription-ended');
     expect(endedByA.type === 'subscription-ended' && endedByA.sessionId === ba).toBeTrue();
+    const endedForC = c.take('subscription-ended');
+    expect(endedForC.type === 'subscription-ended' && endedForC.sessionId === ca).toBeTrue();
     b.send({ type: 'sharing-started' });
-    watch(c, b);
-    extra.send({ type: 'join-room', roomId });
-    const snapshot = extra.take('joined');
-    expect(
-      snapshot.type === 'joined' &&
-        snapshot.peers.length === 5 &&
-        snapshot.peers.some(peer => peer.peerId === b.id && peer.sharing),
-    ).toBeTrue();
+    const resumedCb = watch(c, b);
 
-    const stopId = crypto.randomUUID();
-    c.send({ type: 'watch', targetPeerId: null, sessionId: stopId });
+    c.send({ type: 'watch', targetPeerId: null, sessionId: resumedCb });
     c.take('subscription-ended');
     c.take('watching');
     const db = watch(d, b);
     e.send({ type: 'watch', targetPeerId: b.id, sessionId: db });
     e.take('watching');
     e.take('error');
+  } finally {
+    hub.close();
+  }
+});
+
+test('rooms accept ten participants and reject the eleventh', () => {
+  const hub = new SignalingHub(ROOM_SECRET);
+  try {
+    const roomId = crypto.randomUUID();
+    for (let index = 0; index < 10; index++) {
+      const client = hub.createClient();
+      const socket = new FakeSocket();
+      hub.open(client, socket);
+      hub.message(client, JSON.stringify(authorized({ type: 'join-room', roomId })));
+      const joined = socket.take('joined');
+      expect(joined.type === 'joined' && joined.peers.length).toBe(index + 1);
+    }
+    const client = hub.createClient();
+    const socket = new FakeSocket();
+    hub.open(client, socket);
+    hub.message(client, JSON.stringify(authorized({ type: 'join-room', roomId })));
+    expect(socket.take('error')).toEqual({ type: 'error', message: 'Sala cheia: limite de 10 participantes.' });
   } finally {
     hub.close();
   }

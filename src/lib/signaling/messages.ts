@@ -6,6 +6,8 @@ export const ROOM_NAME_MAX_LENGTH = 64;
 export const ROOM_PASSWORD_MAX_LENGTH = 128;
 export const ROOM_CREDENTIAL_MAX_LENGTH = 2048;
 export const ROOM_ACCESS_TOKEN_MAX_LENGTH = 1024;
+export const MAX_ROOM_PARTICIPANTS = 10;
+export const MAX_WATCHED_STREAMS = 2;
 export const roomNameSchema = z
   .string()
   .max(2000)
@@ -91,7 +93,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     accessToken: roomAccessTokenSchema.nullable(),
     accessTokenExpiresAt: z.number().int().positive().nullable(),
     peerId: id,
-    peers: z.array(participant).max(5),
+    peers: z.array(participant).max(MAX_ROOM_PARTICIPANTS),
   }),
   z
     .object({
@@ -99,7 +101,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
       reason: z.enum(['invalid-invite', 'password-required', 'wrong-password', 'too-many-attempts']),
     })
     .strict(),
-  z.object({ type: z.literal('room-state'), peers: z.array(participant).max(5) }),
+  z.object({ type: z.literal('room-state'), peers: z.array(participant).max(MAX_ROOM_PARTICIPANTS) }),
   z.object({ type: z.literal('watching'), peerId: id.nullable(), sessionId: id }),
   z.object({ type: z.literal('subscriber-joined'), peerId: id, sessionId: id }),
   z.object({ type: z.literal('subscription-ended'), peerId: id, sessionId: id }),

@@ -17,7 +17,7 @@ export class Peers {
   readonly peers = new Map<string, Entry>();
   constructor(
     private send: (message: ClientMessage) => void,
-    private onStream: (stream: MediaStream | null) => void,
+    private onStream: (sessionId: string, peerId: string, stream: MediaStream | null) => void,
     private onChange: () => void,
     private onError: (error: unknown) => void,
   ) {}
@@ -46,7 +46,7 @@ export class Peers {
       if (!this.current(entry) || direction !== 'receive') return;
       entry.remoteStream ??= streams[0] ?? new MediaStream();
       if (!entry.remoteStream.getTracks().includes(track)) entry.remoteStream.addTrack(track);
-      this.onStream(entry.remoteStream);
+      this.onStream(entry.sessionId, entry.peerId, entry.remoteStream);
     };
     pc.onconnectionstatechange =
       pc.oniceconnectionstatechange =
@@ -57,7 +57,6 @@ export class Peers {
     return entry;
   }
   select(peerId: string | null, sessionId: string) {
-    this.closeDirection('receive');
     // Create before sending watch: ICE can precede the offer, but never the selection.
     if (peerId) this.createPeerConnection(peerId, sessionId, 'receive');
   }
@@ -175,7 +174,7 @@ export class Peers {
         null;
     for (const receiver of entry.pc.getReceivers()) receiver.track?.stop();
     entry.pc.close();
-    if (entry.direction === 'receive') this.onStream(null);
+    if (entry.direction === 'receive') this.onStream(entry.sessionId, entry.peerId, null);
     this.onChange();
   }
   removePeer(peerId: string) {

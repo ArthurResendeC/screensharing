@@ -44,7 +44,7 @@ class FakeConnection {
     this.closed = true;
   }
 }
-test('single receiver, reciprocal sessions, early ICE, stale signaling and independent cleanup', async () => {
+test('two receivers, reciprocal sessions, early ICE, stale signaling and independent cleanup', async () => {
   const original = globalThis.RTCPeerConnection;
   globalThis.RTCPeerConnection = FakeConnection as unknown as typeof RTCPeerConnection;
   try {
@@ -87,9 +87,11 @@ test('single receiver, reciprocal sessions, early ICE, stale signaling and indep
     expect(sender.added.length).toBe(1);
     const nextId = crypto.randomUUID();
     peers.select(crypto.randomUUID(), nextId);
-    expect(receiver.closed).toBeTrue();
+    expect(receiver.closed).toBeFalse();
     expect(sender.closed).toBeFalse();
-    expect([...peers.peers.values()].filter(entry => entry.direction === 'receive').length).toBe(1);
+    expect([...peers.peers.values()].filter(entry => entry.direction === 'receive').length).toBe(2);
+    peers.removeSession(sessionId);
+    expect(receiver.closed).toBeTrue();
     await peers.receive(offer);
     expect(peers.peers.has(sessionId)).toBeFalse();
     peers.closeDirection('send');
@@ -102,7 +104,7 @@ test('single receiver, reciprocal sessions, early ICE, stale signaling and indep
   }
 });
 
-test('selection change while remote SDP is pending cannot emit an old answer', async () => {
+test('removed selection while remote SDP is pending cannot emit an old answer', async () => {
   const original = globalThis.RTCPeerConnection;
   let resolveDescription!: () => void;
   class DelayedConnection extends FakeConnection {
@@ -128,7 +130,7 @@ test('selection change while remote SDP is pending cannot emit an old answer', a
       sessionId = crypto.randomUUID();
     peers.select(peerId, sessionId);
     const receiving = peers.receive({ type: 'offer', peerId, sessionId, sdp: { type: 'offer', sdp: 'offer' } });
-    peers.select(crypto.randomUUID(), crypto.randomUUID());
+    peers.removeSession(sessionId);
     resolveDescription();
     await receiving;
     expect(sent.length).toBe(0);

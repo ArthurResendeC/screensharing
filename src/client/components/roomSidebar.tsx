@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from 'react';
-import { ALIAS_MAX_LENGTH } from '../../lib/signaling/messages';
+import { ALIAS_MAX_LENGTH, MAX_ROOM_PARTICIPANTS } from '../../lib/signaling/messages';
 import { isVideoCodecSupported, type VideoCodecPreference, VIDEO_CODEC_PREFERENCES } from '../../lib/webrtc/codecs';
 import { ACCENTS, type ScreenShareController, type ScreenShareState } from '../screenShare';
 import { inviteUrl, listFavoriteRooms } from '../roomStorage';
@@ -87,14 +87,14 @@ export function RoomSidebar({ roomId, state, controller, onDebug }: Props) {
           <div className="section-title">
             <span>Participantes</span>
             <span className="count mono" data-participants>
-              {state.members.length} / 5
+              {state.members.length} / {MAX_ROOM_PARTICIPANTS}
             </span>
           </div>
           <ul className="members" data-members>
             <ParticipantList
               members={state.members}
               selfId={state.selfId}
-              selectedId={state.selectedId}
+              selectedIds={state.selectedIds}
               connected={connected}
               onWatch={peerId => controller.watch(peerId)}
             />

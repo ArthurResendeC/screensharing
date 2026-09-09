@@ -1,5 +1,5 @@
 import { connectSignaling } from '../lib/signaling/client';
-import { ALIAS_MAX_LENGTH, type Participant, type ServerMessage } from '../lib/signaling/messages';
+import { ALIAS_MAX_LENGTH, MAX_WATCHED_STREAMS, type Participant, type ServerMessage } from '../lib/signaling/messages';
 import {
   normalizeVideoCodecPreference,
   type VideoCodecPreference,
@@ -18,8 +18,7 @@ type Session = {
   channel: ReturnType<typeof connectSignaling> | null;
   members: Participant[];
   stream: MediaStream | null;
-  selection: Selection | null;
-  watchRequest: string;
+  selections: Map<string, Selection>;
   disposed: boolean;
   capture: number;
   joined: boolean;
@@ -65,16 +64,17 @@ function storedAlias() {
 }
 
 export type EndedReason = 'me' | 'remote' | null;
+export type RemoteStream = Selection & { stream: MediaStream };
 export type ScreenShareState = {
   socketState: string;
   selfId: string;
   members: Participant[];
-  selectedId: string | null;
+  selectedIds: string[];
   alias: string;
   capturing: boolean;
   sharing: boolean;
   localStream: MediaStream | null;
-  remoteStream: MediaStream | null;
+  remoteStreams: RemoteStream[];
   captureInfo: string;
   connectionState: string;
   watcherIds: string[];
@@ -102,8 +102,7 @@ export class ScreenShareController {
   private readonly listeners = new Set<Listener>();
   private readonly clientId = crypto.randomUUID?.() ?? '';
   private localStream: MediaStream | null = null;
-  private watchId: string | null = null;
-  private watchName: string | null = null;
+  private readonly watchTargets = new Map<string, string>();
   private resumeWatch = false;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private reconnectAttempts = 0;
@@ -117,12 +116,12 @@ export class ScreenShareController {
     socketState: 'connecting',
     selfId: '',
     members: [],
-    selectedId: null,
+    selectedIds: [],
     alias: storedAlias(),
     capturing: false,
     sharing: false,
     localStream: null,
-    remoteStream: null,
+    remoteStreams: [],
     captureInfo: '',
     connectionState: 'aguardando',
     watcherIds: [],
@@ -290,26 +289,46 @@ export class ScreenShareController {
     if (session) this.stopSessionSharing(session, notify);
   }
 
-  watch(peerId: string | null, resuming = false) {
+  watch(peerId: string, resuming = false) {
     const session = this.session;
     if (!session?.joined || session.disposed) return;
+    const current = session.selections.get(peerId);
+    if (current) {
+      session.selections.delete(peerId);
+      this.watchTargets.delete(peerId);
+      session.peers.removeSession(current.sessionId);
+      this.update({
+        selectedIds: [...session.selections.keys()],
+        remoteStreams: this.state.remoteStreams.filter(item => item.sessionId !== current.sessionId),
+        error: '',
+      });
+      try {
+        session.channel!.send({ type: 'watch', targetPeerId: null, sessionId: current.sessionId });
+        playSound('viewer-leave');
+      } catch (error) {
+        this.setError(error instanceof Error ? error.message : 'Não foi possível encerrar a transmissão.');
+      }
+      return;
+    }
+    if (session.selections.size >= MAX_WATCHED_STREAMS) {
+      this.setError(`Você pode assistir a até ${MAX_WATCHED_STREAMS} transmissões ao mesmo tempo.`);
+      return;
+    }
     if (!resuming) this.resumeWatch = false;
-    this.watchId = peerId;
-    this.watchName = peerId ? this.nameOf(peerId) : null;
     const sessionId = crypto.randomUUID();
-    session.watchRequest = sessionId;
-    session.selection = peerId ? { peerId, sessionId } : null;
-    this.update({ selectedId: peerId, error: '', endedReason: null, endedPeerId: null });
+    const selection = { peerId, sessionId };
+    session.selections.set(peerId, selection);
+    this.watchTargets.set(peerId, this.nameOf(peerId));
+    this.update({ selectedIds: [...session.selections.keys()], error: '', endedReason: null, endedPeerId: null });
     try {
       session.peers.select(peerId, sessionId);
       session.channel!.send({ type: 'watch', targetPeerId: peerId, sessionId });
-      if (!resuming) playSound(peerId ? 'viewer-join' : 'viewer-leave');
+      if (!resuming) playSound('viewer-join');
     } catch (error) {
-      session.peers.closeDirection('receive');
-      session.selection = null;
-      this.watchId = null;
-      this.watchName = null;
-      this.update({ selectedId: null });
+      session.peers.removeSession(sessionId);
+      session.selections.delete(peerId);
+      this.watchTargets.delete(peerId);
+      this.update({ selectedIds: [...session.selections.keys()] });
       this.setError(error instanceof Error ? error.message : 'Não foi possível assistir.');
     }
   }
@@ -358,7 +377,13 @@ export class ScreenShareController {
 
   private renderPeerState(peers: Peers) {
     const entries = [...peers.peers.values()];
-    const connectionState = entries.find(entry => entry.direction === 'receive')?.pc.connectionState ?? 'aguardando';
+    const receiving = entries.filter(entry => entry.direction === 'receive');
+    const connected = receiving.filter(entry => entry.pc.connectionState === 'connected').length;
+    const connectionState = receiving.some(entry => entry.pc.connectionState === 'failed')
+      ? 'failed'
+      : receiving.length
+        ? `${connected}/${receiving.length} conectadas`
+        : 'aguardando';
     const nextWatchers = new Set(entries.filter(entry => entry.direction === 'send').map(entry => entry.peerId));
     for (const peerId of nextWatchers) if (!this.knownWatcherIds.has(peerId)) playSound('viewer-join');
     for (const peerId of this.knownWatcherIds) if (!nextWatchers.has(peerId)) playSound('viewer-leave');
@@ -469,10 +494,10 @@ export class ScreenShareController {
         socketState: 'disconnected',
         selfId: '',
         members: [],
-        selectedId: null,
+        selectedIds: [],
         capturing: false,
         sharing: false,
-        remoteStream: null,
+        remoteStreams: [],
         connectionState: 'aguardando',
         watcherIds: [],
         error: 'Você está offline. A conexão será retomada quando a internet voltar.',
@@ -488,10 +513,10 @@ export class ScreenShareController {
       socketState: 'connecting',
       selfId: '',
       members: [],
-      selectedId: null,
+      selectedIds: [],
       capturing: false,
       sharing: false,
-      remoteStream: null,
+      remoteStreams: [],
       connectionState: 'aguardando',
       watcherIds: [],
       error: this.reconnectAttempts > 0 ? 'Reconectando à sala…' : '',
@@ -509,8 +534,11 @@ export class ScreenShareController {
     };
     const peers = new Peers(
       message => holder.session!.channel!.send(message),
-      stream => {
-        if (holder.session && this.isCurrent(holder.session)) this.update({ remoteStream: stream });
+      (sessionId, peerId, stream) => {
+        if (!holder.session || !this.isCurrent(holder.session)) return;
+        const remoteStreams = this.state.remoteStreams.filter(item => item.sessionId !== sessionId);
+        if (stream) remoteStreams.push({ sessionId, peerId, stream });
+        this.update({ remoteStreams });
       },
       () => {
         if (holder.session && this.isCurrent(holder.session)) this.renderPeerState(peers);
@@ -522,8 +550,7 @@ export class ScreenShareController {
       channel: null,
       members: [],
       stream: null,
-      selection: null,
-      watchRequest: '',
+      selections: new Map(),
       disposed: false,
       capture: 0,
       joined: false,
@@ -556,14 +583,14 @@ export class ScreenShareController {
     this.update({ socketState });
     if (socketState === 'connected') return;
     session.joined = false;
-    if (this.watchId) this.resumeWatch = true;
+    if (this.watchTargets.size) this.resumeWatch = true;
     this.detachPublishing(session);
     session.peers.closeAllPeers();
-    session.selection = null;
+    session.selections.clear();
     session.members = [];
     session.disposed = true;
     session.channel?.close();
-    this.update({ selfId: '', selectedId: null, members: [], remoteStream: null });
+    this.update({ selfId: '', selectedIds: [], members: [], remoteStreams: [] });
     if (this.disposed || this.accessTerminal) return;
     this.setError(
       socketState === 'restarting'
@@ -631,13 +658,14 @@ export class ScreenShareController {
         this.maybeResumeWatch(message.peers);
         break;
       case 'watching':
-        if (message.sessionId !== session.watchRequest) break;
-        if (message.peerId) this.resumeWatch = false;
-        else {
-          session.peers.closeDirection('receive');
-          session.selection = null;
-          this.update({ selectedId: null });
-        }
+        if (message.peerId) break;
+        session.peers.removeSession(message.sessionId);
+        for (const [peerId, selection] of session.selections)
+          if (selection.sessionId === message.sessionId) {
+            session.selections.delete(peerId);
+            this.watchTargets.delete(peerId);
+          }
+        this.update({ selectedIds: [...session.selections.keys()] });
         break;
       case 'subscriber-joined':
         if (session.stream)
@@ -645,13 +673,19 @@ export class ScreenShareController {
         break;
       case 'subscription-ended':
         session.peers.removeSession(message.sessionId);
-        if (session.selection?.sessionId === message.sessionId) {
-          session.selection = null;
-          this.watchId = null;
-          this.watchName = null;
-          this.resumeWatch = false;
-          this.update({ selectedId: null, endedReason: 'remote', endedPeerId: message.peerId });
-        }
+        let endedSelection = false;
+        for (const [peerId, selection] of session.selections)
+          if (selection.sessionId === message.sessionId) {
+            session.selections.delete(peerId);
+            this.watchTargets.delete(peerId);
+            endedSelection = true;
+          }
+        if (endedSelection)
+          this.update({
+            selectedIds: [...session.selections.keys()],
+            endedReason: session.selections.size ? null : 'remote',
+            endedPeerId: message.peerId,
+          });
         break;
       case 'error':
         this.update(session.joined ? { error: message.message } : { joinError: message.message });
@@ -676,14 +710,20 @@ export class ScreenShareController {
   }
 
   private maybeResumeWatch(peers: Participant[]) {
-    if (!this.resumeWatch || this.state.selectedId || (!this.watchId && !this.watchName)) return;
+    if (!this.resumeWatch || !this.watchTargets.size) return;
     const session = this.session;
     if (!session?.joined || session.disposed) return;
     const available = peers.filter(peer => peer.sharing && peer.peerId !== this.state.selfId);
-    const byName = this.watchName ? available.filter(peer => displayName(peer) === this.watchName) : [];
-    const target =
-      available.find(peer => peer.peerId === this.watchId) ?? (byName.length === 1 ? byName[0] : undefined);
-    if (target) this.watch(target.peerId, true);
+    for (const [peerId, name] of this.watchTargets) {
+      if (session.selections.has(peerId)) continue;
+      const byName = available.filter(peer => displayName(peer) === name);
+      const target = available.find(peer => peer.peerId === peerId) ?? (byName.length === 1 ? byName[0] : undefined);
+      if (target && !session.selections.has(target.peerId)) {
+        if (target.peerId !== peerId) this.watchTargets.delete(peerId);
+        this.watch(target.peerId, true);
+      }
+    }
+    this.resumeWatch = session.selections.size < this.watchTargets.size;
   }
 
   dispose() {

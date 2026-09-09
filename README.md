@@ -1,6 +1,6 @@
 # ReShare
 
-Aplicação privada para até **cinco participantes**. Cada pessoa pode transmitir a própria tela e assistir a **uma transmissão remota por vez**, inclusive enquanto transmite. A mídia segue diretamente entre navegadores por WebRTC; o servidor Bun entrega o frontend e transporta somente signaling por WebSocket.
+Aplicação privada para até **dez participantes**. Cada pessoa pode transmitir a própria tela e assistir a **até duas transmissões remotas por vez**, inclusive enquanto transmite. A mídia segue diretamente entre navegadores por WebRTC; o servidor Bun entrega o frontend e transporta somente signaling por WebSocket.
 
 ## Stack e arquitetura
 
@@ -9,7 +9,7 @@ Aplicação privada para até **cinco participantes**. Cada pessoa pode transmit
 - Um único `Bun.serve()` atende `/`, `/room/:roomId`, `/health`, `/config.json` e o WebSocket `/signaling`.
 - Zod valida todas as mensagens nos dois lados.
 - Participantes conectados ficam em memória. O nome e a proteção da sala ficam em um convite assinado, dispensando banco de dados.
-- Cada assinatura usa um `RTCPeerConnection` unidirecional. Um transmissor tem uma conexão de envio por espectador; cada participante mantém no máximo uma conexão de recebimento.
+- Cada assinatura usa um `RTCPeerConnection` unidirecional. Um transmissor tem uma conexão de envio por espectador; cada participante mantém no máximo duas conexões de recebimento.
 
 ## Desenvolvimento local
 
@@ -63,7 +63,7 @@ bun run test:e2e
 
 `bun run lint` usa [oxlint](https://oxc.rs) com verificação type-aware via `tsgolint` (`oxlint --type-aware`); `bun run format` aplica o [oxfmt](https://oxc.rs) e `bun run format:check` valida. As configurações ficam em `.oxlintrc.json` e `.oxfmtrc.json`.
 
-O teste unitário do signaling cobre lotação, isolamento, autorização de relay, seleção única, publicações simultâneas, apelidos de participantes, mensagens inválidas, taxa e backpressure. Os testes de peers cobrem ICE recebido antes do SDP, sessões antigas e cleanup independente. O Playwright usa WebRTC real com vídeo e áudio sintéticos em até cinco abas.
+O teste unitário do signaling cobre lotação, isolamento, autorização de relay, duas seleções simultâneas, publicações simultâneas, apelidos de participantes, mensagens inválidas, taxa e backpressure. Os testes de peers cobrem ICE recebido antes do SDP, sessões antigas e cleanup independente. O Playwright usa WebRTC real com vídeo e áudio sintéticos em múltiplas abas.
 
 Para duas máquinas, use o domínio HTTPS do Railway ou outro domínio com TLS válido. `getDisplayMedia()` exige contexto seguro; HTTP por IP da rede local não basta. Crie a sala no PC A, abra o mesmo convite no PC B e escolha a transmissão. Redes diferentes podem exigir TURN.
 
@@ -71,7 +71,7 @@ Para duas máquinas, use o domínio HTTPS do Railway ou outro domínio com TLS v
 
 `create-room` gera um UUID e uma credencial assinada contendo o nome imutável e, quando configurado, um verificador protegido da senha. Em cada `join-room`, o servidor valida o convite e aceita uma senha ou um token de acesso assinado ainda válido. O token dura 30 dias e fica salvo no navegador; a senha não. Depois da validação, o servidor cria a representação em memória, gera um `peerId`, envia o snapshot e publica mudanças com `room-state`. Assim, o mesmo convite funciona depois que a sala fica vazia ou o servidor reinicia, desde que `ROOM_TOKEN_SECRET` não mude. `sharing-started` apenas anuncia disponibilidade; nenhuma mídia passa pelo servidor.
 
-Ao selecionar um transmissor, o espectador envia `watch` com um `sessionId` novo e prepara uma conexão de recepção. O servidor confirma com `watching` e envia `subscriber-joined` ao transmissor. O transmissor cria uma conexão exclusiva para essa assinatura, adiciona as tracks, cria/aplica a offer e a envia. O espectador aplica a offer, cria/aplica a answer e devolve. ICE é enviado incrementalmente; candidatos que chegam antes de `remoteDescription` ficam em uma fila limitada e são aplicados depois do SDP.
+Ao selecionar um transmissor, o espectador envia `watch` com um `sessionId` novo e prepara uma conexão de recepção. Até duas assinaturas podem ficar ativas por espectador. O servidor confirma com `watching` e envia `subscriber-joined` ao transmissor. O transmissor cria uma conexão exclusiva para essa assinatura, adiciona as tracks, cria/aplica a offer e a envia. O espectador aplica a offer, cria/aplica a answer e devolve. ICE é enviado incrementalmente; candidatos que chegam antes de `remoteDescription` ficam em uma fila limitada e são aplicados depois do SDP.
 
 O servidor só encaminha offer, answer e ICE quando remetente, destino, sala, direção e assinatura coincidem. Mensagens atrasadas são descartadas. Trocar ou encerrar uma assinatura fecha a conexão nos dois lados sem afetar outras transmissões.
 
@@ -114,7 +114,7 @@ Defina `ROOM_TOKEN_SECRET` com pelo menos 32 caracteres aleatórios e preserve o
 - Favoritos pertencem somente ao perfil atual do navegador e desaparecem ao limpar os dados do site.
 - Uma réplica; escalar exige estado compartilhado e afinidade ou outro desenho de signaling.
 - Sem SFU, gravação, chat, microfone ou retomada automática de ICE.
-- Cada participante assiste uma transmissão por vez.
+- Cada participante assiste até duas transmissões por vez; isso aumenta o consumo de banda e processamento no receptor, e os áudios podem se sobrepor.
 - Qualidade e áudio variam por navegador, dispositivo e rede.
 
 ## Referências oficiais

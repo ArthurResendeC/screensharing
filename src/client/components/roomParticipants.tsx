@@ -1,14 +1,15 @@
 import type { CSSProperties } from 'react';
 import type { Participant } from '../../lib/signaling/messages';
+import { MAX_WATCHED_STREAMS } from '../../lib/signaling/messages';
 import { avatarColor, displayName, initialsOf } from '../participantPresentation';
 import { ScreenIcon } from './icons';
 
 type SelectionProps = {
   members: Participant[];
   selfId: string;
-  selectedId: string | null;
+  selectedIds: string[];
   connected: boolean;
-  onWatch: (peerId: string | null) => void;
+  onWatch: (peerId: string) => void;
 };
 
 function PlayIcon() {
@@ -19,10 +20,10 @@ function PlayIcon() {
   );
 }
 
-export function ParticipantList({ members, selfId, selectedId, connected, onWatch }: SelectionProps) {
+export function ParticipantList({ members, selfId, selectedIds, connected, onWatch }: SelectionProps) {
   return members.map(member => {
     const isSelf = member.peerId === selfId;
-    const isSelected = selectedId === member.peerId;
+    const isSelected = selectedIds.includes(member.peerId);
     const canWatch = member.sharing && !isSelf;
     const name = displayName(member);
     return (
@@ -39,7 +40,7 @@ export function ParticipantList({ members, selfId, selectedId, connected, onWatc
           <button
             type="button"
             className="watch-btn"
-            disabled={!connected}
+            disabled={!connected || (!isSelected && selectedIds.length >= MAX_WATCHED_STREAMS)}
             aria-pressed={isSelected}
             title={`${isSelected ? 'Reconectar a' : 'Assistir a'} ${name}`}
             onClick={() => onWatch(member.peerId)}
@@ -52,7 +53,7 @@ export function ParticipantList({ members, selfId, selectedId, connected, onWatc
   });
 }
 
-export function ScreenPicker({ members, selfId, selectedId, connected, onWatch }: SelectionProps) {
+export function ScreenPicker({ members, selfId, selectedIds, connected, onWatch }: SelectionProps) {
   const live = members.filter(member => member.sharing && member.peerId !== selfId);
   const columns = Math.ceil(Math.sqrt(live.length)) || 1;
   const rows = Math.ceil(live.length / columns) || 1;
@@ -60,15 +61,15 @@ export function ScreenPicker({ members, selfId, selectedId, connected, onWatch }
   return (
     <div className="screen-picker-grid" style={style}>
       {live.map(member => {
-        const selected = selectedId === member.peerId;
+        const selected = selectedIds.includes(member.peerId);
         const name = displayName(member);
         return (
           <button
             key={member.peerId}
             type="button"
             className={`screen-tile${selected ? ' is-selected' : ''}`}
-            disabled={!connected}
-            onClick={() => onWatch(selected ? null : member.peerId)}
+            disabled={!connected || (!selected && selectedIds.length >= MAX_WATCHED_STREAMS)}
+            onClick={() => onWatch(member.peerId)}
           >
             <div className="screen-tile-thumb" style={{ background: `${avatarColor(name)}22` }}>
               <div className="screen-tile-overlay">
