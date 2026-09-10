@@ -36,7 +36,7 @@ import {
   realtimeTracksNew,
   type TrackRequest,
 } from './api';
-import { FifoQueue, waitForIceGathering } from './session';
+import { FifoQueue, waitForConnected, waitForIceGathering } from './session';
 
 type Listener = () => void;
 type Subscription = { videoMid: string; audioMid?: string; stream: MediaStream; publisherSessionId: string };
@@ -59,6 +59,7 @@ export class CloudflareMediaProvider implements MediaProvider {
   private publication: LocalPublication | null = null;
   private sendTransceivers: RTCRtpTransceiver[] = [];
   private readonly subscriptions = new Map<string, Subscription>();
+  private readonly subscribeRetries = new Map<string, number>();
   private readonly midToPeer = new Map<string, { peerId: string; kind: 'video' | 'audio' }>();
   private readonly hidden = new Set<string>();
   private members: Participant[] = [];
@@ -318,9 +319,13 @@ export class CloudflareMediaProvider implements MediaProvider {
     this.sendTransceivers = audioTx ? [videoTx, audioTx] : [videoTx];
     await this.applyEncodeParameters();
 
-    this.channel?.send({ type: 'rt-publish', sessionId: this.cfSessionId!, video: videoName, audio: audioName });
+    // Só anuncia depois que o PC está de pé e enviando: pull antes disso dá
+    // "Track not found on remote peer" nos outros participantes.
     this.update({ localStream: captured, sharing: true });
     this.startCaptureInfo(captured);
+    await waitForConnected(pc);
+    if (!this.isCurrent(seq)) return;
+    this.channel?.send({ type: 'rt-publish', sessionId: this.cfSessionId!, video: videoName, audio: audioName });
   }
 
   private startCaptureInfo(captured: MediaStream) {
@@ -453,6 +458,7 @@ export class CloudflareMediaProvider implements MediaProvider {
     this.sendTransceivers = [];
     this.publication = null;
     this.subscriptions.clear();
+    this.subscribeRetries.clear();
     this.midToPeer.clear();
     this.members = [];
     this.membersSeeded = false;
@@ -521,6 +527,7 @@ export class CloudflareMediaProvider implements MediaProvider {
     this.pc?.close();
     this.pc = null;
     this.subscriptions.clear();
+    this.subscribeRetries.clear();
     this.midToPeer.clear();
     this.update({ selfId: '', selectedIds: [], members: [], remoteStreams: [], watcherIds: [] });
     if (this.disposed || this.accessTerminal) return;
@@ -717,6 +724,17 @@ export class CloudflareMediaProvider implements MediaProvider {
 
     const res = await realtimeTracksNew(this.ticket, { tracks });
     if (!this.isCurrent(seq)) return;
+
+    // O publicador ainda não está enviando pacotes (corrida no anúncio); tenta de
+    // novo daqui a pouco, até um limite.
+    if (!res.sessionDescription || (res.tracks ?? []).some(t => t.errorCode || !t.mid)) {
+      const attempts = (this.subscribeRetries.get(member.peerId) ?? 0) + 1;
+      this.subscribeRetries.set(member.peerId, attempts);
+      if (attempts <= 8) setTimeout(() => this.reconcile(seq), 1200);
+      return;
+    }
+    this.subscribeRetries.delete(member.peerId);
+
     const stream = new MediaStream();
     const sub: Subscription = { videoMid: '', stream, publisherSessionId: member.rt.sessionId };
     const mids: string[] = [];
@@ -814,6 +832,8 @@ export class CloudflareMediaProvider implements MediaProvider {
     }
     this.membersSeeded = true;
     for (const id of Array.from(this.hidden)) if (!next.some(m => m.peerId === id)) this.hidden.delete(id);
+    for (const id of Array.from(this.subscribeRetries.keys()))
+      if (!next.some(m => m.peerId === id)) this.subscribeRetries.delete(id);
     this.members = next;
     this.update({ members: next });
   }

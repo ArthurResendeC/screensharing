@@ -76,7 +76,8 @@ test('public room: creates a CF session and returns a ticket + answer', async ()
 
   expect(cfCalls[0]!.url).toBe('https://rtc.live.cloudflare.com/v1/apps/app-123/sessions/new');
   expect(cfCalls[0]!.auth).toBe('Bearer cf-app-secret');
-  expect(cfCalls[0]!.body).toEqual({});
+  // Cloudflare's /sessions/new rejects "{}" — send no body when there is no offer.
+  expect(cfCalls[0]!.body).toBeUndefined();
 });
 
 test('password room: requires the password and rejects the wrong one', async () => {

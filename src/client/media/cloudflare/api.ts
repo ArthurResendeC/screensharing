@@ -52,6 +52,7 @@ export type RealtimeAccessReason =
   | 'wrong-password'
   | 'too-many-attempts'
   | 'session-gone'
+  | 'not-ready'
   | 'unavailable';
 
 export class RealtimeError extends Error {

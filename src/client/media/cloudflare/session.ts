@@ -27,3 +27,37 @@ export function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 2000): Pr
     pc.addEventListener('icegatheringstatechange', check);
   });
 }
+
+// Espera o PC ficar realmente conectado. O SFU só aceita "pull" de uma track depois
+// que o publicador completou ICE/DTLS e está enviando pacotes — anunciar antes disso
+// leva a "Track not found on remote peer". Resolve no timeout (best effort);
+// rejeita se a conexão falhar.
+export function waitForConnected(pc: RTCPeerConnection, timeoutMs = 15_000): Promise<void> {
+  const isUp = () =>
+    pc.connectionState === 'connected' ||
+    pc.iceConnectionState === 'connected' ||
+    pc.iceConnectionState === 'completed';
+  if (isUp()) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      pc.removeEventListener('connectionstatechange', check);
+      pc.removeEventListener('iceconnectionstatechange', check);
+      clearTimeout(timer);
+    };
+    const check = () => {
+      if (isUp()) {
+        cleanup();
+        resolve();
+      } else if (pc.connectionState === 'failed' || pc.iceConnectionState === 'failed') {
+        cleanup();
+        reject(new Error('media connection failed'));
+      }
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, timeoutMs);
+    pc.addEventListener('connectionstatechange', check);
+    pc.addEventListener('iceconnectionstatechange', check);
+  });
+}

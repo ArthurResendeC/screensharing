@@ -73,15 +73,17 @@ const json = (body: unknown, status: number) =>
 // carregada num ticket HMAC. A sinalização de presença continua no WebSocket.
 export function createRealtimeProxy(options: RealtimeProxyOptions) {
   const limiter = new TokenRateLimiter();
-  const cfAuth = { authorization: `Bearer ${options.appSecret}`, 'content-type': 'application/json' };
+  const bearer = { authorization: `Bearer ${options.appSecret}` };
+  const jsonAuth = { ...bearer, 'content-type': 'application/json' };
 
-  async function cf(path: string, method: string, body: unknown): Promise<Response> {
+  // body === undefined → sem corpo (o /sessions/new do Cloudflare recusa "{}").
+  async function cf(path: string, method: string, body?: unknown): Promise<Response> {
     let upstream: Response;
     try {
       upstream = await fetch(`${CF_BASE}/apps/${options.appId}${path}`, {
         method,
-        headers: cfAuth,
-        body: JSON.stringify(body),
+        headers: body === undefined ? bearer : jsonAuth,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     } catch {
       return json({ reason: 'sfu-unavailable' }, 502);
@@ -124,7 +126,7 @@ export function createRealtimeProxy(options: RealtimeProxyOptions) {
       }
     }
 
-    const upstream = await cf('/sessions/new', 'POST', body.offer ? { sessionDescription: body.offer } : {});
+    const upstream = await cf('/sessions/new', 'POST', body.offer ? { sessionDescription: body.offer } : undefined);
     if (!upstream.ok) return upstream;
     const created = z
       .object({ sessionId: z.string().min(1), sessionDescription: sessionDescriptionSchema.optional() })
