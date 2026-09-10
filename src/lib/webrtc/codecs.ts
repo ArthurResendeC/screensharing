@@ -9,7 +9,7 @@ const MIME_TYPES: Record<Exclude<VideoCodecPreference, 'auto'>, string> = {
   av1: 'video/av1',
 };
 
-export function getVideoCodecCapabilities(): RTCRtpCodec[] {
+function getVideoCodecCapabilities(): RTCRtpCodec[] {
   if (typeof RTCRtpSender === 'undefined') return [];
   return RTCRtpSender.getCapabilities?.('video')?.codecs ?? [];
 }

@@ -982,7 +982,7 @@ ul.members {
 .remote-stream-grid.has-two.layout-rows {
   grid-template-rows: repeat(2, minmax(0, 1fr));
 }
-/* Modo LiveKit sem limite de telas: grade automática que acomoda três ou mais. */
+/* Modo cloudflare sem limite de telas: grade automática que acomoda três ou mais. */
 .remote-stream-grid.has-many {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   grid-auto-rows: minmax(0, 1fr);

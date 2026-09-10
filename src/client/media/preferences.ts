@@ -14,8 +14,8 @@ const DEGRADATION_STORAGE_KEY = 'screen-share:degradation';
 const CAPTURE_STORAGE_KEY = 'screen-share:capture';
 const CODEC_STORAGE_KEY = 'screen-share:codec';
 
-export const DEGRADATION_CHOICES = ['framerate', 'balanced', 'resolution'] as const;
-export const CAPTURE_CHOICES = ['fluid', 'balanced', 'sharp'] as const;
+const DEGRADATION_CHOICES = ['framerate', 'balanced', 'resolution'] as const;
+const CAPTURE_CHOICES = ['fluid', 'balanced', 'sharp'] as const;
 
 export const CAPTURE_PRESETS: Record<CaptureQuality, MediaTrackConstraints> = {
   fluid: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } },
@@ -23,7 +23,7 @@ export const CAPTURE_PRESETS: Record<CaptureQuality, MediaTrackConstraints> = {
   sharp: { width: { ideal: 2560 }, height: { ideal: 1440 }, frameRate: { ideal: 60 } },
 };
 
-export function storedChoice<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+function storedChoice<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
     const value = localStorage.getItem(key) as T;
     return allowed.includes(value) ? value : fallback;

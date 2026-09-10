@@ -27,7 +27,7 @@ export type VideoStats = {
   direction: 'Enviado' | 'Recebido';
 };
 
-export type NetworkStats = {
+type NetworkStats = {
   protocol?: string;
   localCandidateType?: string;
   remoteCandidateType?: string;
@@ -42,7 +42,7 @@ export type NetworkStats = {
   bytesReceived?: number;
 };
 
-export type CaptureStats = { width?: number; height?: number; fps?: number; frames?: number };
+type CaptureStats = { width?: number; height?: number; fps?: number; frames?: number };
 export type PeerStats = { video: VideoStats[]; network?: NetworkStats; capture?: CaptureStats };
 
 export type Sample = {

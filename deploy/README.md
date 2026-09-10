@@ -28,7 +28,7 @@ crie um app. Você recebe **App ID** e **App Secret**. Conta gratuita basta.
 | `CLOUDFLARE_REALTIME_APP_ID` | se `cloudflare` | da dashboard; vai no path das chamadas ao SFU |
 | `CLOUDFLARE_REALTIME_APP_SECRET` | se `cloudflare` | Bearer das chamadas ao SFU — **só no servidor**, nunca em `/config.json` |
 | `ROOM_TOKEN_SECRET` | em produção | inalterada — assina convites e o ticket de sessão, ≥ 32 caracteres |
-| `MAX_ROOM_PARTICIPANTS` | não | ausente = sem limite; só afeta o caminho legado de signaling WebRTC |
+| `MAX_ROOM_PARTICIPANTS` | não | limite de tamanho de sala verificado ao entrar (vale nos dois modos); ausente = sem limite |
 | `TURN_URL` / `TURN_USERNAME` / `TURN_CREDENTIAL` | não | TURN extra opcional; a Cloudflare já expõe IP público + STUN |
 
 ```bash

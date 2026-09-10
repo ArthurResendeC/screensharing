@@ -17,7 +17,7 @@ export const ACCENTS = [
   { color: '#8fb98a', label: 'Verde' },
 ] as const;
 
-export type EndedReason = 'me' | 'remote' | null;
+type EndedReason = 'me' | 'remote' | null;
 export type Selection = { peerId: string; sessionId: string };
 export type RemoteStream = Selection & { stream: MediaStream };
 
@@ -53,7 +53,7 @@ export type ScreenShareState = {
 };
 
 // Superfície que a camada React (hook + componentes) consome. Tanto o provedor mesh
-// WebRTC quanto o provedor LiveKit implementam exatamente isto, então nenhum
+// WebRTC quanto o provedor Cloudflare implementam exatamente isto, então nenhum
 // componente muda de comportamento ao trocar de transporte.
 export interface MediaProvider {
   readonly subscribe: (listener: () => void) => () => void;
@@ -76,7 +76,7 @@ export interface MediaProvider {
   dismissEnded(): void;
   copyInvite(): Promise<void>;
   nameOf(peerId: string | null): string;
-  // Somente o provedor mesh expõe RTCPeerConnections; o LiveKit devolve null e o
-  // painel de debug mostra estatísticas do próprio SDK.
+  // Somente o provedor mesh expõe o mapa de RTCPeerConnections; o cloudflare devolve
+  // null e o painel de debug aponta para chrome://webrtc-internals.
   getPeers(): Peers | null;
 }

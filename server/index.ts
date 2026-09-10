@@ -20,7 +20,8 @@ const turnConfig = process.env.TURN_URL
   ? { urls: process.env.TURN_URL, username: process.env.TURN_USERNAME, credential: process.env.TURN_CREDENTIAL }
   : null;
 
-// Ausente = sem limite. Só limita o caminho legado de signaling WebRTC.
+// Limite opcional de tamanho de sala, aplicado no join-room (usado nos dois modos:
+// tanto o mesh quanto o cloudflare passam por join-room). Ausente = sem limite.
 const maxRoomParticipants = Number(process.env.MAX_ROOM_PARTICIPANTS) || undefined;
 
 const configuredOrigins = new Set(

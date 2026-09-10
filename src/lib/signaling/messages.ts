@@ -4,15 +4,12 @@ export const roomIdSchema = z.string().uuid();
 const id = z.string().uuid();
 export const ROOM_NAME_MAX_LENGTH = 64;
 export const ROOM_PASSWORD_MAX_LENGTH = 128;
-export const ROOM_CREDENTIAL_MAX_LENGTH = 2048;
-export const ROOM_ACCESS_TOKEN_MAX_LENGTH = 1024;
-// Limite padrão do caminho legado de signaling WebRTC (malha O(n²)). O servidor pode
-// sobrescrever com MAX_ROOM_PARTICIPANTS; no modo LiveKit não há limite (o SFU
-// distribui no servidor). Continua exportado porque testes e a UI o referenciam.
-export const MAX_ROOM_PARTICIPANTS = 10;
-// Teto de segurança do schema das listas de participantes: igual ao limite global de
-// clientes do hub, para que salas grandes (modo LiveKit) sejam serializadas.
-export const MAX_ROOM_MESSAGE_PARTICIPANTS = 250;
+const ROOM_CREDENTIAL_MAX_LENGTH = 2048;
+const ROOM_ACCESS_TOKEN_MAX_LENGTH = 1024;
+// Teto de segurança das listas de participantes: igual ao limite global de clientes
+// do hub, para que salas grandes (sem MAX_ROOM_PARTICIPANTS configurado) sejam
+// serializadas.
+const MAX_ROOM_MESSAGE_PARTICIPANTS = 250;
 export const MAX_WATCHED_STREAMS = 2;
 export const roomNameSchema = z
   .string()
@@ -34,7 +31,7 @@ const candidateSchema = z
   .strict();
 export const ALIAS_MAX_LENGTH = 32;
 // Accept any reasonable string and normalise it; the client already caps input length.
-export const aliasSchema = z
+const aliasSchema = z
   .string()
   .max(2000)
   .trim()
@@ -58,7 +55,7 @@ const ice = z.object({ type: z.literal('ice-candidate'), ...route, candidate: ca
 // Publicação no SFU Cloudflare Realtime: onde encontrar as tracks de quem compartilha.
 // Sempre null no modo mesh WebRTC.
 const trackName = z.string().min(1).max(128);
-export const rtPublicationSchema = z
+const rtPublicationSchema = z
   .object({ sessionId: z.string().min(1).max(128), video: trackName, audio: trackName.nullable() })
   .strict();
 export type RtPublication = z.infer<typeof rtPublicationSchema>;
@@ -96,7 +93,6 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ping') }).strict(),
 ]);
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
-export type RelayMessage = Extract<ClientMessage, { targetPeerId: string }>;
 export const serverMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('room-created'),

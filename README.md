@@ -55,13 +55,14 @@ A captura solicita 2560 × 1440 a 60 FPS como valores ideais. A interface mostra
 bun run typecheck
 bun run lint
 bun run format:check
+bun run knip
 bun test
 bun run build
 bunx playwright install --with-deps chromium
 bun run test:e2e
 ```
 
-`bun run lint` usa [oxlint](https://oxc.rs) com verificação type-aware via `tsgolint` (`oxlint --type-aware`); `bun run format` aplica o [oxfmt](https://oxc.rs) e `bun run format:check` valida. As configurações ficam em `.oxlintrc.json` e `.oxfmtrc.json`.
+`bun run lint` usa [oxlint](https://oxc.rs) com verificação type-aware via `tsgolint` (`oxlint --type-aware`); `bun run format` aplica o [oxfmt](https://oxc.rs) e `bun run format:check` valida. As configurações ficam em `.oxlintrc.json` e `.oxfmtrc.json`. `bun run knip` ([knip](https://knip.dev), config em `knip.json`) aponta arquivos, exports e dependências sem uso.
 
 O teste unitário do signaling cobre lotação, isolamento, autorização de relay, duas seleções simultâneas, publicações simultâneas, apelidos de participantes, mensagens inválidas, taxa e backpressure. Os testes de peers cobrem ICE recebido antes do SDP, sessões antigas e cleanup independente. O Playwright usa WebRTC real com vídeo e áudio sintéticos em múltiplas abas.
 

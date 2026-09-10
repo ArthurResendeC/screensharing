@@ -41,7 +41,8 @@ export class SignalingHub {
   readonly rooms = new Map<string, Room>();
   readonly clients = new Set<Client>();
 
-  // maxRoomParticipants ausente = sem limite (modo LiveKit não usa este caminho).
+  // maxRoomParticipants ausente = sem limite. Aplicado no join-room, que os dois
+  // modos usam para presença.
   constructor(
     private readonly roomTokenSecret: string,
     private readonly maxRoomParticipants?: number,

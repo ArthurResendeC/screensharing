@@ -18,7 +18,7 @@ const accessPayloadSchema = z
   .object({ v: z.literal(1), roomId: roomIdSchema, expiresAt: z.number().int().positive() })
   .strict();
 
-export const ROOM_ACCESS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const ROOM_ACCESS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type RoomDescriptor = z.infer<typeof payloadSchema>;
 

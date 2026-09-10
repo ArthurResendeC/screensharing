@@ -14,7 +14,8 @@
     "format:check": "oxfmt --check",
     "test": "bun test ./tests/*.test.ts",
     "test:e2e": "playwright test",
-    "test:e2e:cloudflare": "playwright test --config playwright.cloudflare.config.ts"
+    "test:e2e:cloudflare": "playwright test --config playwright.cloudflare.config.ts",
+    "knip": "knip-bun"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -28,6 +29,7 @@
     "@types/node": "^26.5.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
+    "knip": "^6.35.1",
     "oxfmt": "^0.67.0",
     "oxlint": "^1.82.0",
     "oxlint-tsgolint": "^7.0.2001",

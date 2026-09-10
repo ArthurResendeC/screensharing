@@ -21,9 +21,9 @@ import { inviteUrl, rememberRoomAccess } from './roomStorage';
 import { playSound, unlockSounds } from './sounds';
 import { loadTheme, type Theme } from './theme';
 
-// Compatibilidade: componentes e testes importam estes nomes de './screenShare'.
+// Compatibilidade: componentes importam estes nomes de './screenShare'.
 export { ACCENTS } from './media/types';
-export type { CaptureQuality, EndedReason, RemoteStream, ScreenShareState } from './media/types';
+export type { ScreenShareState } from './media/types';
 type Session = {
   peers: Peers;
   channel: ReturnType<typeof connectSignaling> | null;
