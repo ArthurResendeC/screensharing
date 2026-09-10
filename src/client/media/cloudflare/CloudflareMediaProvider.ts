@@ -12,7 +12,6 @@ import {
   type VideoDegradation,
   VIDEO_DEGRADATION_PREFERENCE,
 } from '../../../lib/webrtc/rtcConfiguration';
-import { tuneVideoBitrate } from '../../../lib/webrtc/sdp';
 import { displayName, participantName } from '../../participantPresentation';
 import { inviteUrl, rememberRoomAccess } from '../../roomStorage';
 import { playSound, unlockSounds } from '../../sounds';
@@ -270,7 +269,12 @@ export class CloudflareMediaProvider implements MediaProvider {
       this.wantsToShare = true;
       await this.queue.run(() => this.publish(seq, captured));
     } catch (error) {
-      if (this.isCurrent(seq)) {
+      if (!this.isCurrent(seq)) return;
+      if (error instanceof RealtimeError) {
+        // Publicação falhou no SFU: mantém wantsToShare para o reconnect re-publicar.
+        this.teardownCaptureKeepingIntent();
+        this.handleTrackError(seq, error);
+      } else {
         this.teardownCapture();
         this.setError(error instanceof Error ? `Não foi possível capturar: ${error.message}` : 'Captura cancelada.');
       }
@@ -289,8 +293,11 @@ export class CloudflareMediaProvider implements MediaProvider {
     setVideoCodecPreference(videoTx, this.state.codecPreference);
     const audioTx = audioTrack ? pc.addTransceiver(audioTrack, { direction: 'sendonly' }) : undefined;
 
+    // Sem munge de SDP para o SFU: os hints x-google-*-bitrate são específicos de
+    // browser-para-browser e o Cloudflare devolve uma answer que o Chrome não
+    // consegue reconciliar ("Failed to set remote video description send parameters").
+    // O teto de bitrate é aplicado depois via RTCRtpSender.setParameters().
     const offer = await pc.createOffer();
-    if (offer.sdp) offer.sdp = tuneVideoBitrate(offer.sdp);
     await pc.setLocalDescription(offer);
     await waitForIceGathering(pc);
     if (!this.isCurrent(seq)) return;
@@ -383,6 +390,15 @@ export class CloudflareMediaProvider implements MediaProvider {
       track.stop();
     });
     this.localStream = null;
+    this.capturing = false;
+    this.update({ sharing: false, capturing: false, captureInfo: '', localStream: null });
+  }
+
+  // Publicação falhou mas queremos re-tentar no reconnect: para os timers e some
+  // com o preview, mas mantém a MediaStream viva para resumeShare() re-publicar.
+  private teardownCaptureKeepingIntent() {
+    if (this.settingsTimer) clearInterval(this.settingsTimer);
+    this.settingsTimer = undefined;
     this.capturing = false;
     this.update({ sharing: false, capturing: false, captureInfo: '', localStream: null });
   }
@@ -568,15 +584,14 @@ export class CloudflareMediaProvider implements MediaProvider {
 
   private async establishSession(seq: number) {
     if (!this.isCurrent(seq)) return;
-    // O Cloudflare não usa trickle ICE, então os STUN/TURN precisam estar no PC
-    // antes da primeira offer. STUN do próprio Cloudflare + qualquer TURN de
-    // /config.json (configureRtc preenche rtcConfiguration.iceServers).
+    // Igual ao fluxo de referência da Cloudflare: a sessão é criada sem offer e a
+    // primeira operação de track (publish ou subscribe) estabelece o PC. Sem
+    // placeholder de transceiver e sem munge de SDP — o SFU é exigente com a answer.
     const pc = new RTCPeerConnection({
       bundlePolicy: 'max-bundle',
       iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }, ...(rtcConfiguration.iceServers ?? [])],
     });
     this.pc = pc;
-    pc.addTransceiver('video', { direction: 'recvonly' });
     pc.ontrack = event => this.onTrack(seq, event);
     pc.onconnectionstatechange = () => {
       if (!this.isCurrent(seq)) return;
@@ -587,21 +602,12 @@ export class CloudflareMediaProvider implements MediaProvider {
       }
     };
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    await waitForIceGathering(pc);
-    if (!this.isCurrent(seq)) {
-      pc.close();
-      return;
-    }
-
     try {
       const session = await createRealtimeSession({
         roomId: this.roomId,
         credential: this.credential,
         password: this.roomPassword,
         accessToken: this.roomAccessToken,
-        offer: { type: 'offer', sdp: pc.localDescription!.sdp },
       });
       if (!this.isCurrent(seq)) {
         pc.close();
@@ -609,7 +615,6 @@ export class CloudflareMediaProvider implements MediaProvider {
       }
       this.ticket = session.ticket;
       this.cfSessionId = session.sessionId;
-      if (session.answer) await pc.setRemoteDescription(session.answer);
       this.joined = true;
       this.reconnectAttempts = 0;
       this.update({ socketState: 'connected', error: '' });
@@ -620,8 +625,35 @@ export class CloudflareMediaProvider implements MediaProvider {
     }
   }
 
+  // Erros de operações de track: convite/senha inválidos são terminais; qualquer
+  // outra coisa (sessão coletada pelo SFU, falha de rede, SDP recusada) → recria a
+  // sessão do zero. O backoff exponencial limita o retry.
+  private handleTrackError(seq: number, error: unknown) {
+    if (!this.isCurrent(seq)) return;
+    if (
+      error instanceof RealtimeError &&
+      (error.reason === 'invalid-invite' ||
+        error.reason === 'password-required' ||
+        error.reason === 'wrong-password' ||
+        error.reason === 'too-many-attempts')
+    ) {
+      this.handleAccessError(error);
+      return;
+    }
+    this.ticket = null;
+    this.cfSessionId = null;
+    this.setError('Reconectando à mídia…');
+    this.scheduleReconnect();
+  }
+
   private handleAccessError(error: unknown) {
-    if (error instanceof RealtimeError && error.reason !== 'unavailable') {
+    if (
+      error instanceof RealtimeError &&
+      (error.reason === 'invalid-invite' ||
+        error.reason === 'password-required' ||
+        error.reason === 'wrong-password' ||
+        error.reason === 'too-many-attempts')
+    ) {
       this.accessTerminal = error.reason === 'invalid-invite' || error.reason === 'too-many-attempts';
       this.update({ accessError: error.reason });
       return;
@@ -640,8 +672,9 @@ export class CloudflareMediaProvider implements MediaProvider {
     }
     try {
       await this.queue.run(() => this.publish(seq, this.localStream!));
-    } catch {
-      this.teardownCapture();
+    } catch (error) {
+      if (error instanceof RealtimeError) this.handleTrackError(seq, error);
+      else this.teardownCapture();
     }
   }
 
@@ -659,7 +692,9 @@ export class CloudflareMediaProvider implements MediaProvider {
       }
     }
     for (const member of visible) {
-      if (!this.subscriptions.has(member.peerId)) void this.queue.run(() => this.subscribeTo(seq, member));
+      if (!this.subscriptions.has(member.peerId)) {
+        void this.queue.run(() => this.subscribeTo(seq, member)).catch(error => this.handleTrackError(seq, error));
+      }
     }
 
     const previous = this.state.selectedIds;
@@ -684,8 +719,10 @@ export class CloudflareMediaProvider implements MediaProvider {
     if (!this.isCurrent(seq)) return;
     const stream = new MediaStream();
     const sub: Subscription = { videoMid: '', stream, publisherSessionId: member.rt.sessionId };
+    const mids: string[] = [];
     for (const t of res.tracks ?? []) {
       if (!t.mid) continue;
+      mids.push(t.mid);
       const kind = t.trackName === member.rt.audio ? 'audio' : 'video';
       this.midToPeer.set(t.mid, { peerId: member.peerId, kind });
       if (kind === 'video') sub.videoMid = t.mid;
@@ -693,11 +730,18 @@ export class CloudflareMediaProvider implements MediaProvider {
     }
     this.subscriptions.set(member.peerId, sub);
 
-    if (res.sessionDescription) {
-      await pc.setRemoteDescription(res.sessionDescription);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      await realtimeRenegotiate(this.ticket, { type: 'answer', sdp: pc.localDescription!.sdp });
+    try {
+      if (res.sessionDescription) {
+        await pc.setRemoteDescription(res.sessionDescription);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await realtimeRenegotiate(this.ticket, { type: 'answer', sdp: pc.localDescription!.sdp });
+      }
+    } catch (error) {
+      // Deixa o estado consistente para o próximo reconcile poder tentar de novo.
+      this.subscriptions.delete(member.peerId);
+      for (const mid of mids) this.midToPeer.delete(mid);
+      throw error;
     }
     this.rebuildRemoteStreams();
   }

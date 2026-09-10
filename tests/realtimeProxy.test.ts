@@ -51,13 +51,13 @@ async function newSession(overrides: Record<string, unknown> = {}, ip?: string) 
   return {
     roomId,
     credential,
-    response: await proxy(req('/realtime/session', 'POST', { roomId, credential, offer: OFFER, ...overrides }, ip)),
+    response: await proxy(req('/realtime/session', 'POST', { roomId, credential, ...overrides }, ip)),
   };
 }
 
 test('forged credential is rejected with invalid-invite', async () => {
   const response = await proxy(
-    req('/realtime/session', 'POST', { roomId: crypto.randomUUID(), credential: 'nope.nope', offer: OFFER }),
+    req('/realtime/session', 'POST', { roomId: crypto.randomUUID(), credential: 'nope.nope' }),
   );
   expect(response.status).toBe(403);
   expect(await response.json()).toEqual({ reason: 'invalid-invite' });
@@ -76,25 +76,21 @@ test('public room: creates a CF session and returns a ticket + answer', async ()
 
   expect(cfCalls[0]!.url).toBe('https://rtc.live.cloudflare.com/v1/apps/app-123/sessions/new');
   expect(cfCalls[0]!.auth).toBe('Bearer cf-app-secret');
-  expect(cfCalls[0]!.body).toEqual({ sessionDescription: OFFER });
+  expect(cfCalls[0]!.body).toEqual({});
 });
 
 test('password room: requires the password and rejects the wrong one', async () => {
   const roomId = crypto.randomUUID();
   const credential = issueRoomCredential(ROOM_SECRET, roomId, 'Secreta', 'hunter2');
 
-  const missing = await proxy(req('/realtime/session', 'POST', { roomId, credential, offer: OFFER }, '198.51.100.1'));
+  const missing = await proxy(req('/realtime/session', 'POST', { roomId, credential }, '198.51.100.1'));
   expect(missing.status).toBe(403);
   expect(await missing.json()).toEqual({ reason: 'password-required' });
 
-  const wrong = await proxy(
-    req('/realtime/session', 'POST', { roomId, credential, offer: OFFER, password: 'x' }, '198.51.100.2'),
-  );
+  const wrong = await proxy(req('/realtime/session', 'POST', { roomId, credential, password: 'x' }, '198.51.100.2'));
   expect(await wrong.json()).toEqual({ reason: 'wrong-password' });
 
-  const ok = await proxy(
-    req('/realtime/session', 'POST', { roomId, credential, offer: OFFER, password: 'hunter2' }, '198.51.100.3'),
-  );
+  const ok = await proxy(req('/realtime/session', 'POST', { roomId, credential, password: 'hunter2' }, '198.51.100.3'));
   expect(ok.status).toBe(200);
 });
 
@@ -102,14 +98,10 @@ test('blocks a client after five failed attempts on the same room', async () => 
   const roomId = crypto.randomUUID();
   const credential = issueRoomCredential(ROOM_SECRET, roomId, 'Sala', 'right');
   for (let i = 0; i < 5; i++) {
-    const r = await proxy(
-      req('/realtime/session', 'POST', { roomId, credential, offer: OFFER, password: 'wrong' }, '192.0.2.7'),
-    );
+    const r = await proxy(req('/realtime/session', 'POST', { roomId, credential, password: 'wrong' }, '192.0.2.7'));
     expect(r.status).toBe(403);
   }
-  const blocked = await proxy(
-    req('/realtime/session', 'POST', { roomId, credential, offer: OFFER, password: 'right' }, '192.0.2.7'),
-  );
+  const blocked = await proxy(req('/realtime/session', 'POST', { roomId, credential, password: 'right' }, '192.0.2.7'));
   expect(blocked.status).toBe(429);
 });
 

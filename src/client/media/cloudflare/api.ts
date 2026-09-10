@@ -51,6 +51,7 @@ export type RealtimeAccessReason =
   | 'password-required'
   | 'wrong-password'
   | 'too-many-attempts'
+  | 'session-gone'
   | 'unavailable';
 
 export class RealtimeError extends Error {
@@ -82,6 +83,8 @@ async function send(method: 'POST' | 'PUT', path: string, body: unknown): Promis
 
 function fail(response: Response): never {
   if (response.status === 429) throw new RealtimeError('too-many-attempts', 429);
+  // The SFU GCs a session after ~30s with no media; the caller re-establishes.
+  if (response.status === 404) throw new RealtimeError('session-gone', 404);
   throw new RealtimeError('unavailable', response.status);
 }
 
@@ -90,7 +93,6 @@ export async function createRealtimeSession(params: {
   credential: string;
   password?: string;
   accessToken?: string;
-  offer: RTCSessionDescriptionInit;
 }): Promise<RealtimeSession> {
   const parsed = z.object({ roomId: roomIdSchema, credential: roomCredentialSchema }).safeParse(params);
   if (!parsed.success) throw new RealtimeError('invalid-invite', 400);
@@ -100,7 +102,6 @@ export async function createRealtimeSession(params: {
     credential: params.credential,
     ...(params.password ? { password: params.password } : {}),
     ...(params.accessToken ? { accessToken: params.accessToken } : {}),
-    offer: { type: 'offer', sdp: params.offer.sdp },
   });
   if (!response.ok) {
     if (response.status === 403) {

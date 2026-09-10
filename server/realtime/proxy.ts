@@ -40,7 +40,8 @@ const sessionRequestSchema = z
     credential: roomCredentialSchema,
     password: z.string().min(1).max(128).optional(),
     accessToken: z.string().min(1).max(1024).optional(),
-    offer: sessionDescriptionSchema,
+    // O cliente cria a sessão sem offer; a primeira operação de track estabelece o PC.
+    offer: sessionDescriptionSchema.optional(),
   })
   .strict();
 
@@ -123,7 +124,7 @@ export function createRealtimeProxy(options: RealtimeProxyOptions) {
       }
     }
 
-    const upstream = await cf('/sessions/new', 'POST', { sessionDescription: body.offer });
+    const upstream = await cf('/sessions/new', 'POST', body.offer ? { sessionDescription: body.offer } : {});
     if (!upstream.ok) return upstream;
     const created = z
       .object({ sessionId: z.string().min(1), sessionDescription: sessionDescriptionSchema.optional() })
