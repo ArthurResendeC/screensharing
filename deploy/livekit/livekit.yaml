@@ -6,21 +6,22 @@ bind_addresses:
   - ''
 
 rtc:
+  # Mídia por TCP. O IPv4 compartilhado do Fly não roteia UDP; UDP exige um IPv4
+  # dedicado (`fly ips allocate-v4`, ~US$2/mês). Para ligar UDP depois: aloque o IP,
+  # descomente `udp_port` e o serviço udp 7882 no fly.toml, e refaça o deploy.
   tcp_port: 7881
-  # Porta única de UDP mux — combina com o serviço UDP dedicado do Fly.
-  udp_port: 7882
+  # udp_port: 7882
   # Descobre o IP público (necessário atrás de NAT / em VM).
   use_external_ip: true
 
-# TURN embutido: cobre VPN, CGNAT e redes que bloqueiam UDP sem coturn separado.
-# Dá para subir SEM domínio próprio: o Fly já emite cert para <app>.fly.dev, então
-# `domain` pode ser o próprio host do app. Um domínio custom (ex.: turn.seu-dominio)
-# pode ser adicionado depois — só troque este valor e refaça o deploy.
+# TURN embutido sobre TLS (5349): cobre VPN, CGNAT e redes que só deixam sair 443.
+# Sem domínio próprio: o Fly já emite cert para <app>.fly.dev. Um domínio custom
+# (ex.: turn.seu-dominio) pode ser adicionado depois — troque `domain` e refaça o deploy.
 turn:
   enabled: true
   domain: reshare-livekit.fly.dev
   tls_port: 5349
-  udp_port: 3478
+  # udp_port: 3478   # também precisa de IPv4 dedicado
   # O Fly termina TLS na borda; o LiveKit recebe TURN/TCP em texto puro atrás dela.
   external_tls: true
 

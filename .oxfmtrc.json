@@ -3,5 +3,12 @@
   "singleQuote": true,
   "arrowParens": "avoid",
   "printWidth": 120,
-  "ignorePatterns": ["dist/**", "bun.lock", "playwright-report/**", "test-results/**"]
+  "ignorePatterns": [
+    "dist/**",
+    "bun.lock",
+    "playwright-report/**",
+    "test-results/**",
+    "deploy/**",
+    "docker-compose.yml"
+  ]
 }

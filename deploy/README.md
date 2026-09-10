@@ -5,7 +5,7 @@
 ```
 React ──► API Bun (Railway)  ──►  Servidor LiveKit (Fly.io)
           · autentica o convite       · transporte, ICE, SDP
-          · assina o JWT do LiveKit    · TURN/TURN-TLS embutido (3478/5349)
+          · assina o JWT do LiveKit    · ICE/TCP 7881 + TURN/TLS 5349 (UDP: IP dedicado)
           · GET /livekit/token         · simulcast + dynacast + adaptive stream
           · WebSocket só p/ create-room · reconexão automática
 ```
@@ -57,8 +57,9 @@ Servidor LiveKit: `LIVEKIT_KEYS` (`"chave: segredo"`), config em `livekit/liveki
 - `LIVEKIT_API_SECRET` só no host da API; nunca em `/config.json` nem no bundle.
 - JWT curto (`10m`): o cliente busca um token novo a cada (re)conexão.
 - Fixe as versões: imagem `livekit/livekit-server`, `livekit-client`, `livekit-server-sdk`.
-- LiveKit atrás de TLS (`wss`) com TURN/TLS em 5349 para redes que bloqueiam UDP.
-- `rtc.use_external_ip: true` + regras de firewall para a faixa UDP e `7881/tcp`.
+- LiveKit atrás de TLS (`wss`); mídia por ICE/TCP 7881 + TURN/TLS 5349. UDP (menor
+  latência) exige IPv4 dedicado no Fly (~US$2/mês) — veja `livekit/fly-deploy.md`.
+- `rtc.use_external_ip: true` + as portas TCP publicadas (7880/7881/5349).
 - `room.empty_timeout` libera salas abandonadas (não há banco para reconciliar).
 - Acompanhe as métricas Prometheus do `livekit-server`; alerte na fração de tráfego
   via TURN (relay).
