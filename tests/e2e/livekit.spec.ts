@@ -137,9 +137,27 @@ test('a third participant sees two simultaneous shares with no watch cap', async
   await shareButton(b!).click();
 
   // Carol watches both automatically — the "up to two" cap is gone in LiveKit mode.
-  await showsColor(c!, 'red');
-  await expect(c!.getByLabel('Segunda transmissão selecionada', { exact: true })).toBeVisible({ timeout: 15000 });
-  await expect(c!.locator('.remote-stream-cell')).toHaveCount(2);
+  await expect(c!.locator('.remote-stream-cell')).toHaveCount(2, { timeout: 20000 });
+  await expect
+    .poll(
+      () =>
+        c!.locator('.remote-stream-cell video').evaluateAll(videos =>
+          videos
+            .map(el => {
+              const video = el as HTMLVideoElement;
+              const canvas = document.createElement('canvas');
+              canvas.width = 1;
+              canvas.height = 1;
+              const ctx = canvas.getContext('2d')!;
+              if (video.videoWidth) ctx.drawImage(video, 0, 0, 1, 1);
+              const [r, , b] = ctx.getImageData(0, 0, 1, 1).data;
+              return video.paused ? 'paused' : r > 150 ? 'red' : b > 150 ? 'blue' : 'none';
+            })
+            .sort(),
+        ),
+      { timeout: 25000 },
+    )
+    .toEqual(['blue', 'red']);
 
   await Promise.all(contexts.map(context => context.close()));
 });
