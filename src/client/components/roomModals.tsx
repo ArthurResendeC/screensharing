@@ -1,9 +1,10 @@
 import React, { useEffect, useState, type ReactNode } from 'react';
 import { ALIAS_MAX_LENGTH, ROOM_PASSWORD_MAX_LENGTH } from '../../lib/signaling/messages';
-import type { ScreenShareController, ScreenShareState } from '../screenShare';
+import type { MediaProvider } from '../media/types';
+import type { ScreenShareState } from '../screenShare';
 import { CloseIcon, EndedIcon, EyeIcon, ScreenIcon } from './icons';
 
-export function NameGate({ state, controller }: { state: ScreenShareState; controller: ScreenShareController }) {
+export function NameGate({ state, controller }: { state: ScreenShareState; controller: MediaProvider }) {
   const [open, setOpen] = useState(!state.alias);
   const submit = (event: React.SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();

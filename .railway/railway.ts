@@ -24,7 +24,12 @@ export default defineRailway(ctx => {
       PORT: '3000',
       NODE_ENV: 'production',
       MAX_VIDEO_BITRATE: '15000000',
+      // Camada de mídia. Comece em 'webrtc'; troque para 'livekit' quando o SFU
+      // estiver validado. Rollback = voltar para 'webrtc' e reiniciar.
+      MEDIA_PROVIDER: 'webrtc',
     },
+    // LIVEKIT_URL, LIVEKIT_API_KEY e LIVEKIT_API_SECRET são segredos definidos fora
+    // da IaC: `railway variables set LIVEKIT_API_SECRET=... --service web`.
   });
 
   return project('screensharing', { resources: [web] });

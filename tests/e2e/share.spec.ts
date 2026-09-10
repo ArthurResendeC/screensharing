@@ -242,7 +242,7 @@ test('protected room validates its password and each browser manages its own fav
   await expect(participant.getByText('Salas favoritas', { exact: true })).toBeVisible();
   await participant.getByText('Planejamento semanal', { exact: true }).click();
   await expect(participant.locator('[data-password-gate]')).toHaveCount(0);
-  await expect(participant.locator('[data-participants]')).toHaveText('2 / 10');
+  await expect(participant.locator('[data-participants]')).toHaveText('2');
   await participantContext.close();
 });
 
@@ -288,7 +288,7 @@ test('five participants: simultaneous publishing, reciprocal watching and two re
     await identity(viewer);
     viewers.push(viewer);
   }
-  await expect(participantCount(a)).toHaveText('5 / 10');
+  await expect(participantCount(a)).toHaveText('5');
   await shareButton(a).click();
   await shareButton(b).click();
   await expect(b.locator('[data-capture-info]')).toContainText('Sem áudio disponível nesta captura');
@@ -392,7 +392,7 @@ test('five participants: simultaneous publishing, reciprocal watching and two re
   await expect.poll(() => activeCounts(viewers[2])).toEqual({ sending: 0, receiving: 0, total: 0 });
   expect(await viewers[2].evaluate(() => (window as unknown as TestWindow).testAutoPipHandler)).toBeNull();
   await a.close(); // Creator leaving does not close the room or B's stream.
-  await expect(participantCount(b)).toHaveText('4 / 10');
+  await expect(participantCount(b)).toHaveText('4');
   await cleared(b);
   await playing(c, 'blue', 0);
   await choose(viewers[1], bName);
@@ -474,7 +474,7 @@ test('a single lost signaling socket reconnects on its own and resumes sharing a
   // B's socket drops. No button to press: B's session comes back on its own,
   // keeps the same captured screen, and re-selects the stream B was watching.
   await dropSignaling(b);
-  await expect(participantCount(b)).toHaveText('2 / 10');
+  await expect(participantCount(b)).toHaveText('2');
   await playing(b, 'red', 1);
   expect(await b.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');
   // A stayed connected and saw B leave; once B is back, A re-picks it in one click.
@@ -502,7 +502,7 @@ test('a pure publisher whose socket drops keeps publishing to its viewer after r
   // A only publishes — it is not watching anyone. Its socket drops; it must come
   // back on its own and re-announce the same screen so B's view recovers.
   await dropSignaling(a);
-  await expect(participantCount(a)).toHaveText('2 / 10');
+  await expect(participantCount(a)).toHaveText('2');
   expect(await a.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');
   await choose(b, aName);
   await playing(b, 'red', 1);
@@ -535,8 +535,8 @@ test('a redeploy drops every socket at once and the room restores itself without
   // Simulate a Railway deploy: the server drops, every client socket closes together.
   await Promise.all([dropSignaling(a), dropSignaling(b)]);
 
-  await expect(participantCount(a)).toHaveText('2 / 10');
-  await expect(participantCount(b)).toHaveText('2 / 10');
+  await expect(participantCount(a)).toHaveText('2');
+  await expect(participantCount(b)).toHaveText('2');
   // Both captures survived the reconnect, so nobody re-picks a screen.
   expect(await a.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');
   expect(await b.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');

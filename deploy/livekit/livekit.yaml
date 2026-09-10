@@ -1,0 +1,39 @@
+# Configuração de produção do servidor LiveKit (deploy no Fly.io — veja fly.toml).
+# Chaves via variável de ambiente LIVEKIT_KEYS ("chave: segredo"), nunca no Git.
+
+port: 7880
+bind_addresses:
+  - ''
+
+rtc:
+  tcp_port: 7881
+  # Porta única de UDP mux — combina com o serviço UDP dedicado do Fly.
+  udp_port: 7882
+  # Descobre o IP público (necessário atrás de NAT / em VM).
+  use_external_ip: true
+
+# TURN embutido: cobre VPN, CGNAT e redes que bloqueiam UDP sem coturn separado.
+turn:
+  enabled: true
+  # Ajuste para o domínio TLS que termina em 5349 (Fly: <app>.fly.dev ou domínio próprio).
+  domain: livekit.example.com
+  tls_port: 5349
+  udp_port: 3478
+  # O Fly termina TLS na borda; o LiveKit recebe TURN/TCP em texto puro atrás dela.
+  external_tls: true
+
+room:
+  # Sala é criada no primeiro join e removida após ficar vazia. Sem limite de
+  # participantes: o SFU distribui no servidor (dynacast + adaptive stream contêm
+  # o custo por receptor).
+  empty_timeout: 300
+  departure_timeout: 20
+  max_participants: 0
+
+logging:
+  level: info
+  json: false
+
+# Só para múltiplos nós de LiveKit (roteamento entre nós). Um nó não precisa.
+# redis:
+#   address: redis:6379

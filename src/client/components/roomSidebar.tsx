@@ -1,7 +1,8 @@
 import { useState, type CSSProperties } from 'react';
-import { ALIAS_MAX_LENGTH, MAX_ROOM_PARTICIPANTS } from '../../lib/signaling/messages';
+import { ALIAS_MAX_LENGTH } from '../../lib/signaling/messages';
 import { isVideoCodecSupported, type VideoCodecPreference, VIDEO_CODEC_PREFERENCES } from '../../lib/webrtc/codecs';
-import { ACCENTS, type ScreenShareController, type ScreenShareState } from '../screenShare';
+import type { MediaProvider } from '../media/types';
+import { ACCENTS, type ScreenShareState } from '../screenShare';
 import { inviteUrl, listFavoriteRooms } from '../roomStorage';
 import { avatarColor, initialsOf, participantName } from '../participantPresentation';
 import { ParticipantList } from './roomParticipants';
@@ -11,7 +12,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 type Props = {
   roomId: string;
   state: ScreenShareState;
-  controller: ScreenShareController;
+  controller: MediaProvider;
   collapsed: boolean;
   onDebug: () => void;
 };
@@ -93,7 +94,7 @@ export function RoomSidebar({ roomId, state, controller, collapsed, onDebug }: P
           <div className="section-title">
             <span>Participantes</span>
             <span className="count mono" data-participants>
-              {state.members.length} / {MAX_ROOM_PARTICIPANTS}
+              {state.members.length}
             </span>
           </div>
           <ul className="members" data-members>

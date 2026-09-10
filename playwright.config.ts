@@ -4,6 +4,9 @@ const isCI = process.env.CI !== undefined;
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // O modo LiveKit tem seu próprio config (playwright.livekit.config.ts) porque exige
+  // um servidor LiveKit e variáveis de ambiente diferentes no webServer.
+  testIgnore: /livekit\.spec\.ts/,
   timeout: 60000,
   workers: 1,
   use: {

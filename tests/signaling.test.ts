@@ -336,7 +336,7 @@ test('room subscriptions: two selections, reciprocal watching, isolation and ind
 });
 
 test('rooms accept ten participants and reject the eleventh', () => {
-  const hub = new SignalingHub(ROOM_SECRET);
+  const hub = new SignalingHub(ROOM_SECRET, 10);
   try {
     const roomId = crypto.randomUUID();
     for (let index = 0; index < 10; index++) {
@@ -352,6 +352,23 @@ test('rooms accept ten participants and reject the eleventh', () => {
     hub.open(client, socket);
     hub.message(client, JSON.stringify(authorized({ type: 'join-room', roomId })));
     expect(socket.take('error')).toEqual({ type: 'error', message: 'Sala cheia: limite de 10 participantes.' });
+  } finally {
+    hub.close();
+  }
+});
+
+test('without a configured cap the room accepts more than ten participants', () => {
+  const hub = new SignalingHub(ROOM_SECRET);
+  try {
+    const roomId = crypto.randomUUID();
+    for (let index = 0; index < 13; index++) {
+      const client = hub.createClient();
+      const socket = new FakeSocket();
+      hub.open(client, socket);
+      hub.message(client, JSON.stringify(authorized({ type: 'join-room', roomId })));
+      const joined = socket.take('joined');
+      expect(joined.type === 'joined' && joined.peers.length).toBe(index + 1);
+    }
   } finally {
     hub.close();
   }

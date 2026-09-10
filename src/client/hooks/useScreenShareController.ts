@@ -1,9 +1,9 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { ScreenShareController } from '../screenShare';
+import { createMediaProvider } from '../media/factory';
 import { applyTheme } from '../theme';
 
 export function useScreenShareController(roomId: string, credential: string, password?: string, accessToken?: string) {
-  const [controller] = useState(() => new ScreenShareController(roomId, credential, password, accessToken));
+  const [controller] = useState(() => createMediaProvider(roomId, credential, password, accessToken));
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
 
   useEffect(() => {

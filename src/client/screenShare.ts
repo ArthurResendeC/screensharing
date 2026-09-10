@@ -1,18 +1,29 @@
 import { connectSignaling } from '../lib/signaling/client';
 import { ALIAS_MAX_LENGTH, MAX_WATCHED_STREAMS, type Participant, type ServerMessage } from '../lib/signaling/messages';
-import {
-  normalizeVideoCodecPreference,
-  type VideoCodecPreference,
-  VIDEO_CODEC_PREFERENCES,
-} from '../lib/webrtc/codecs';
+import { normalizeVideoCodecPreference, type VideoCodecPreference } from '../lib/webrtc/codecs';
 import { Peers } from '../lib/webrtc/peers';
 import { setVideoDegradation, type VideoDegradation } from '../lib/webrtc/rtcConfiguration';
+import {
+  CAPTURE_PRESETS,
+  persistAlias,
+  persistCaptureQuality,
+  persistCodecPreference,
+  persistDegradation,
+  storedAlias,
+  storedCaptureQuality,
+  storedCodecPreference,
+  storedDegradation,
+} from './media/preferences';
+import type { CaptureQuality, MediaProvider, ScreenShareState, Selection } from './media/types';
+import { ACCENTS } from './media/types';
 import { displayName, participantName } from './participantPresentation';
 import { inviteUrl, rememberRoomAccess } from './roomStorage';
 import { playSound, unlockSounds } from './sounds';
 import { loadTheme, type Theme } from './theme';
 
-type Selection = { peerId: string; sessionId: string };
+// Compatibilidade: componentes e testes importam estes nomes de './screenShare'.
+export { ACCENTS } from './media/types';
+export type { CaptureQuality, EndedReason, RemoteStream, ScreenShareState } from './media/types';
 type Session = {
   peers: Peers;
   channel: ReturnType<typeof connectSignaling> | null;
@@ -26,78 +37,9 @@ type Session = {
   codecPreference: VideoCodecPreference;
 };
 
-export const ACCENTS = [
-  { color: '#3aa0b4', label: 'Teal' },
-  { color: '#7b8ce8', label: 'Índigo' },
-  { color: '#c08a5a', label: 'Âmbar' },
-  { color: '#8fb98a', label: 'Verde' },
-] as const;
-
-const ALIAS_STORAGE_KEY = 'screen-share:alias';
-const DEGRADATION_STORAGE_KEY = 'screen-share:degradation';
-const CAPTURE_STORAGE_KEY = 'screen-share:capture';
-const CODEC_STORAGE_KEY = 'screen-share:codec';
-const DEGRADATION_CHOICES = ['framerate', 'balanced', 'resolution'] as const;
-export type CaptureQuality = 'fluid' | 'balanced' | 'sharp';
-const CAPTURE_CHOICES = ['fluid', 'balanced', 'sharp'] as const;
-const CAPTURE_PRESETS: Record<CaptureQuality, MediaTrackConstraints> = {
-  fluid: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } },
-  balanced: { width: { ideal: 2560 }, height: { ideal: 1440 }, frameRate: { ideal: 30 } },
-  sharp: { width: { ideal: 2560 }, height: { ideal: 1440 }, frameRate: { ideal: 60 } },
-};
-
-function storedChoice<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
-  try {
-    const value = localStorage.getItem(key) as T;
-    return allowed.includes(value) ? value : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function storedAlias() {
-  try {
-    return (localStorage.getItem(ALIAS_STORAGE_KEY) ?? '').trim().slice(0, ALIAS_MAX_LENGTH);
-  } catch {
-    return '';
-  }
-}
-
-export type EndedReason = 'me' | 'remote' | null;
-export type RemoteStream = Selection & { stream: MediaStream };
-export type ScreenShareState = {
-  socketState: string;
-  selfId: string;
-  members: Participant[];
-  selectedIds: string[];
-  alias: string;
-  capturing: boolean;
-  sharing: boolean;
-  localStream: MediaStream | null;
-  remoteStreams: RemoteStream[];
-  captureInfo: string;
-  connectionState: string;
-  watcherIds: string[];
-  error: string;
-  joinError: string;
-  accessError: '' | 'invalid-invite' | 'password-required' | 'wrong-password' | 'too-many-attempts';
-  roomName: string;
-  passwordProtected: boolean;
-  accessToken?: string;
-  accessTokenExpiresAt?: number;
-  endedReason: EndedReason;
-  endedPeerId: string | null;
-  theme: Theme;
-  accent: string;
-  degradation: VideoDegradation;
-  captureQuality: CaptureQuality;
-  codecPreference: VideoCodecPreference;
-  inviteCopied: boolean;
-};
-
 type Listener = () => void;
 
-export class ScreenShareController {
+export class ScreenShareController implements MediaProvider {
   private session: Session | null = null;
   private readonly listeners = new Set<Listener>();
   private readonly clientId = crypto.randomUUID?.() ?? '';
@@ -113,6 +55,7 @@ export class ScreenShareController {
   private knownWatcherIds = new Set<string>();
   private activeCodecPreference: VideoCodecPreference | null = null;
   private state: ScreenShareState = {
+    mediaProvider: 'webrtc',
     socketState: 'connecting',
     selfId: '',
     members: [],
@@ -134,9 +77,9 @@ export class ScreenShareController {
     endedPeerId: null,
     theme: loadTheme(),
     accent: ACCENTS[0].color,
-    degradation: storedChoice(DEGRADATION_STORAGE_KEY, DEGRADATION_CHOICES, 'framerate'),
-    captureQuality: storedChoice(CAPTURE_STORAGE_KEY, CAPTURE_CHOICES, 'fluid'),
-    codecPreference: normalizeVideoCodecPreference(storedChoice(CODEC_STORAGE_KEY, VIDEO_CODEC_PREFERENCES, 'auto')),
+    degradation: storedDegradation(),
+    captureQuality: storedCaptureQuality(),
+    codecPreference: storedCodecPreference(),
     inviteCopied: false,
   };
 
@@ -179,11 +122,7 @@ export class ScreenShareController {
 
   setAlias(value: string) {
     const alias = value.trim().slice(0, ALIAS_MAX_LENGTH);
-    try {
-      localStorage.setItem(ALIAS_STORAGE_KEY, alias);
-    } catch {
-      // The name still applies to the current tab.
-    }
+    persistAlias(alias);
     this.update({ alias });
     const session = this.session;
     if (!session?.joined || session.disposed) return;
@@ -204,21 +143,13 @@ export class ScreenShareController {
 
   setDegradation(value: VideoDegradation) {
     setVideoDegradation(value);
-    try {
-      localStorage.setItem(DEGRADATION_STORAGE_KEY, value);
-    } catch {
-      // Preference remains valid for this tab.
-    }
+    persistDegradation(value);
     this.update({ degradation: value });
     void this.session?.peers.reapplyEncodeParameters();
   }
 
   async setCaptureQuality(value: CaptureQuality) {
-    try {
-      localStorage.setItem(CAPTURE_STORAGE_KEY, value);
-    } catch {
-      // Preference remains valid for this tab.
-    }
+    persistCaptureQuality(value);
     this.update({ captureQuality: value });
     const track = this.localStream?.getVideoTracks()[0];
     if (track?.readyState !== 'live') return;
@@ -233,11 +164,7 @@ export class ScreenShareController {
 
   setCodecPreference(value: VideoCodecPreference) {
     const codecPreference = normalizeVideoCodecPreference(value);
-    try {
-      localStorage.setItem(CODEC_STORAGE_KEY, codecPreference);
-    } catch {
-      // Preference remains valid for this tab.
-    }
+    persistCodecPreference(codecPreference);
     this.update({ codecPreference });
   }
 

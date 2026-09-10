@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { collectStats, type PeerStats, type Sample, type VideoStats } from '../../lib/webrtc/stats';
-import type { ScreenShareController } from '../screenShare';
+import type { MediaProvider } from '../media/types';
 
 type Row = {
   id: string;
@@ -203,7 +203,7 @@ function VideoMetrics({ video }: { video: VideoStats }) {
   );
 }
 
-export function RoomDebug({ controller, socketState }: { controller: ScreenShareController; socketState: string }) {
+export function RoomDebug({ controller, socketState }: { controller: MediaProvider; socketState: string }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [environment] = useState(browserEnvironment);
   const samples = useRef(new Map<RTCPeerConnection, Map<string, Sample>>());
@@ -276,7 +276,14 @@ export function RoomDebug({ controller, socketState }: { controller: ScreenShare
           <strong>{[...new Set(capabilities)].join(', ') || 'indisponível'}</strong>
         </div>
       </details>
-      {!rows.length && <p>Nenhuma conexão de mídia ativa.</p>}
+      {controller.getPeers() === null ? (
+        <p>
+          O transporte de mídia é gerenciado pelo LiveKit. Para estatísticas RTP detalhadas, use
+          <code> chrome://webrtc-internals</code> ou <code>about:webrtc</code> no navegador.
+        </p>
+      ) : (
+        !rows.length && <p>Nenhuma conexão de mídia ativa.</p>
+      )}
       {rows.map(row => {
         const { network, capture } = row.stats;
         return (

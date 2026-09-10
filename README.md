@@ -101,6 +101,29 @@ TURN_CREDENTIAL=...
 
 O servidor entrega essa configuração ao navegador em `/config.json`. Credenciais WebRTC são visíveis ao cliente; prefira credenciais TURN temporárias. Adicione também URLs TCP/TLS oferecidas pelo provedor para redes que bloqueiam UDP.
 
+## Camada de mídia: WebRTC ou LiveKit
+
+A mídia tem dois provedores atrás de uma mesma interface (`src/client/media/`):
+
+- **`webrtc`** (padrão): malha P2P como descrito acima. Uma `RTCPeerConnection` por
+  assinatura, custo de envio na máquina de quem transmite, limite prático de
+  participantes, TURN próprio.
+- **`livekit`**: um SFU [LiveKit](https://livekit.io) cuida de transporte, ICE, SDP,
+  NAT, TURN, simulcast, adaptação e reconexão. Cada pessoa envia sua tela uma vez; o
+  servidor distribui. Sem limite de participantes e sem o teto de duas lives — todas
+  as telas compartilhadas aparecem automaticamente (`dynacast` + adaptação contêm o
+  custo no receptor). O `server/signaling.ts` continua só para `create-room`; a
+  entrada usa `GET /livekit/token`, que refaz a mesma validação de convite/senha e
+  assina um JWT.
+
+O provedor é escolhido em tempo de execução por `/config.json`, controlado pela
+variável `MEDIA_PROVIDER` do servidor. Trocar o valor e reiniciar troca o transporte
+de toda sessão nova, sem novo build; o rollback é voltar a variável. O servidor
+LiveKit é implantado à parte — veja [`deploy/`](deploy/), com exemplo para Fly.io,
+`deploy/Dockerfile` e `docker-compose.yml` (o Railway continua no Railpack; o
+Dockerfile fica fora da raiz de propósito). Testes do modo LiveKit:
+`bun run test:e2e:livekit` (exige `docker compose up -d livekit`).
+
 ## Deploy na Railway
 
 A infraestrutura está em `.railway/railway.ts` e usa um único serviço `web`, uma réplica, health check `/health`, build `bun run build` e start `bun run start`. Consulte [.railway/README.md](.railway/README.md) para o procedimento de migração e deploy pela CLI.

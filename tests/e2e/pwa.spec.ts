@@ -68,7 +68,7 @@ test('opens a room shell offline and reconnects when the network returns', async
 
   await context.setOffline(false);
   await expect(page.getByRole('status')).toHaveCount(0);
-  await expect(page.locator('[data-participants]')).toHaveText('1 / 10');
+  await expect(page.locator('[data-participants]')).toHaveText('1');
 
   await page.goto('/');
   await page.evaluate(async () => {

@@ -1,9 +1,4 @@
-import {
-  clientMessageSchema,
-  MAX_ROOM_PARTICIPANTS,
-  MAX_WATCHED_STREAMS,
-  type ServerMessage,
-} from '../src/lib/signaling/messages';
+import { clientMessageSchema, MAX_WATCHED_STREAMS, type ServerMessage } from '../src/lib/signaling/messages';
 import {
   issueRoomAccessToken,
   issueRoomCredential,
@@ -39,7 +34,11 @@ export class SignalingHub {
   readonly rooms = new Map<string, Room>();
   readonly clients = new Set<Client>();
 
-  constructor(private readonly roomTokenSecret: string) {}
+  // maxRoomParticipants ausente = sem limite (modo LiveKit não usa este caminho).
+  constructor(
+    private readonly roomTokenSecret: string,
+    private readonly maxRoomParticipants?: number,
+  ) {}
 
   createClient(): Client {
     return {
@@ -211,8 +210,8 @@ export class SignalingHub {
         room = { name: verified.room.roomName, members: new Map() };
         this.rooms.set(message.roomId, room);
       }
-      if (room.members.size >= MAX_ROOM_PARTICIPANTS) {
-        fail(`Sala cheia: limite de ${MAX_ROOM_PARTICIPANTS} participantes.`);
+      if (this.maxRoomParticipants && room.members.size >= this.maxRoomParticipants) {
+        fail(`Sala cheia: limite de ${this.maxRoomParticipants} participantes.`);
         return;
       }
       // A reconnecting client reclaims its previous identity (unless already taken)

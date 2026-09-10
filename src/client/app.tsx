@@ -10,6 +10,7 @@ import {
 } from '../lib/signaling/messages';
 import { createRoom } from '../lib/signaling/client';
 import { configureRtc } from '../lib/webrtc/rtcConfiguration';
+import { configureMedia } from './media/config';
 import { Room } from './room';
 import { RoomPasswordGate } from './components/roomModals';
 import { EyeIcon } from './components/icons';
@@ -30,6 +31,8 @@ import './styles.css';
 import { applyTheme, loadTheme, type Theme } from './theme';
 
 const publicConfigSchema = z.object({
+  mediaProvider: z.enum(['webrtc', 'livekit']).optional(),
+  livekitUrl: z.string().optional(),
   maxVideoBitrate: z.number(),
   minVideoBitrate: z.number().optional(),
   startVideoBitrate: z.number().optional(),
@@ -322,7 +325,13 @@ async function bootstrap() {
   try {
     const response = await fetch('/config.json', { cache: 'no-store' });
     if (!response.ok) throw new Error();
-    configureRtc(publicConfigSchema.parse(await response.json()));
+    const config = publicConfigSchema.parse(await response.json());
+    configureRtc(config);
+    configureMedia({
+      mediaProvider: config.mediaProvider ?? 'webrtc',
+      livekitUrl: config.livekitUrl,
+      maxVideoBitrate: config.maxVideoBitrate,
+    });
   } catch {
     configureRtc({
       maxVideoBitrate: 15_000_000,
@@ -330,6 +339,7 @@ async function bootstrap() {
       startVideoBitrate: 8_000_000,
       turn: null,
     });
+    configureMedia({ mediaProvider: 'webrtc' });
   }
 
   const root = document.querySelector<HTMLElement>('#app');

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { ScreenShareController, ScreenShareState } from '../screenShare';
+import type { MediaProvider } from '../media/types';
+import type { ScreenShareState } from '../screenShare';
 import { MediaVideo } from './mediaVideo';
 import { ScreenPicker, WatcherList } from './roomParticipants';
 import {
@@ -24,7 +25,7 @@ export function RoomStage({
   onToggleFavorite,
 }: {
   state: ScreenShareState;
-  controller: ScreenShareController;
+  controller: MediaProvider;
   favorite: boolean;
   sidebarCollapsed: boolean;
   onToggleSidebar: () => void;
@@ -66,7 +67,7 @@ export function RoomStage({
         <span className="title">{title}</span>
         <div className="divider" />
         <span className="sub">{subtitle}</span>
-        {state.selectedIds.length > 1 && (
+        {state.selectedIds.length === 2 && (
           <div className="layout-switch" role="group" aria-label="Layout das transmissões">
             <button
               type="button"
@@ -178,10 +179,22 @@ export function RoomStage({
           )}
           {watching && (
             <div
-              className={`remote-stream-grid${state.selectedIds.length > 1 ? ` has-two layout-${streamLayout}` : ''}`}
+              className={`remote-stream-grid${
+                state.selectedIds.length === 2
+                  ? ` has-two layout-${streamLayout}`
+                  : state.selectedIds.length > 2
+                    ? ' has-many'
+                    : ''
+              }`}
             >
               {state.selectedIds.map((peerId, index) => {
                 const remote = state.remoteStreams.find(item => item.peerId === peerId);
+                const label =
+                  index === 0
+                    ? 'Transmissão selecionada'
+                    : index === 1
+                      ? 'Segunda transmissão selecionada'
+                      : `Transmissão ${index + 1}`;
                 return (
                   <div className="remote-stream-cell" key={peerId}>
                     {!remote && (
@@ -189,7 +202,7 @@ export function RoomStage({
                     )}
                     <MediaVideo
                       stream={remote?.stream ?? null}
-                      label={index === 0 ? 'Transmissão selecionada' : 'Segunda transmissão selecionada'}
+                      label={label}
                       onStopWatching={() => controller.watch(peerId)}
                     />
                   </div>
@@ -199,8 +212,9 @@ export function RoomStage({
           )}
         </div>
         <p className="stream-limit-notice" role="note">
-          Até duas lives simultâneas. Assistir a duas pode dobrar o uso de internet e processamento; os áudios podem se
-          sobrepor. Silencie uma transmissão se necessário.
+          {state.mediaProvider === 'livekit'
+            ? 'Todas as telas compartilhadas aparecem aqui automaticamente. Use “Deixar de assistir” para ocultar uma; os áudios podem se sobrepor, então silencie o que precisar.'
+            : 'Até duas lives simultâneas. Assistir a duas pode dobrar o uso de internet e processamento; os áudios podem se sobrepor. Silencie uma transmissão se necessário.'}
         </p>
         <div className="action-bar">
           <button
