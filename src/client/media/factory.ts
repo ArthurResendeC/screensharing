@@ -1,6 +1,6 @@
 import { ScreenShareController } from '../screenShare';
+import { CloudflareMediaProvider } from './cloudflare/CloudflareMediaProvider';
 import { getMediaConfig } from './config';
-import { LiveKitMediaProvider } from './livekit/LiveKitMediaProvider';
 import type { MediaProvider } from './types';
 
 // Escolhe a implementação de mídia a partir de /config.json. O restante do app só
@@ -11,8 +11,8 @@ export function createMediaProvider(
   password?: string,
   accessToken?: string,
 ): MediaProvider {
-  if (getMediaConfig().mediaProvider === 'livekit') {
-    return new LiveKitMediaProvider(roomId, credential, password, accessToken);
+  if (getMediaConfig().mediaProvider === 'cloudflare') {
+    return new CloudflareMediaProvider(roomId, credential, password, accessToken);
   }
   return new ScreenShareController(roomId, credential, password, accessToken);
 }

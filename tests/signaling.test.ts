@@ -426,6 +426,53 @@ test('participant aliases: trimmed, capped, broadcast to the room and reset on l
   }
 });
 
+test('rt-publish / rt-unpublish carry the Cloudflare tracks and reset on leave', () => {
+  const hub = new SignalingHub(ROOM_SECRET);
+  const connect = () => {
+    const client = hub.createClient();
+    const socket = new FakeSocket();
+    hub.open(client, socket);
+    return { client, socket, send: (message: unknown) => hub.message(client, JSON.stringify(authorized(message))) };
+  };
+  const roomId = crypto.randomUUID();
+  const join = () => {
+    const peer = connect();
+    peer.send({ type: 'join-room', roomId });
+    const joined = peer.socket.take('joined');
+    if (joined.type !== 'joined') throw new Error();
+    return { ...peer, id: joined.peerId };
+  };
+  try {
+    const a = join();
+    const b = join();
+    b.socket.inbox.length = 0;
+
+    a.send({ type: 'rt-publish', sessionId: 'cf-sess-a', video: 'vid-a', audio: null });
+    const published = b.socket.take('room-state');
+    if (published.type !== 'room-state') throw new Error();
+    const entry = published.peers.find(peer => peer.peerId === a.id);
+    expect(entry?.sharing).toBeTrue();
+    expect(entry?.rt).toEqual({ sessionId: 'cf-sess-a', video: 'vid-a', audio: null });
+
+    b.socket.inbox.length = 0;
+    a.send({ type: 'rt-unpublish' });
+    const unpublished = b.socket.take('room-state');
+    if (unpublished.type !== 'room-state') throw new Error();
+    const after = unpublished.peers.find(peer => peer.peerId === a.id);
+    expect(after?.sharing).toBeFalse();
+    expect(after?.rt).toBeNull();
+
+    a.send({ type: 'rt-publish', sessionId: 'cf-sess-a2', video: 'vid-a2', audio: 'aud-a2' });
+    b.socket.take('room-state');
+    hub.leave(a.client);
+    const afterLeave = b.socket.take('room-state');
+    if (afterLeave.type !== 'room-state') throw new Error();
+    expect(afterLeave.peers.some(peer => peer.peerId === a.id)).toBeFalse();
+  } finally {
+    hub.close();
+  }
+});
+
 test('rate, payload and backpressure failures do not crash the hub', () => {
   const hub = new SignalingHub(ROOM_SECRET);
   const client = hub.createClient();

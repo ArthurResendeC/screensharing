@@ -6,7 +6,7 @@ import type { Theme } from '../theme';
 
 // Qual implementação de mídia está ativa. Escolhida em /config.json e lida por
 // createMediaProvider(); os componentes só precisam disso para ajustar duas frases.
-export type MediaProviderKind = 'webrtc' | 'livekit';
+export type MediaProviderKind = 'webrtc' | 'cloudflare';
 
 export type CaptureQuality = 'fluid' | 'balanced' | 'sharp';
 

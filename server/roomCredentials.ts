@@ -85,3 +85,33 @@ export function verifyRoomAccessToken(secret: string, roomId: string, token: str
     return null;
   }
 }
+
+// Ticket de sessão do Cloudflare Realtime: emitido uma vez, depois que o convite/senha
+// foram validados, e apresentado nas chamadas de track (que só re-verificam este HMAC
+// barato, sem re-checar a senha a cada renegociação).
+const REALTIME_TICKET_TTL_MS = 15 * 60 * 1000;
+const realtimeTicketSchema = z
+  .object({
+    v: z.literal(1),
+    roomId: roomIdSchema,
+    sessionId: z.string().min(1).max(128),
+    expiresAt: z.number().int().positive(),
+  })
+  .strict();
+
+export function issueRealtimeTicket(secret: string, roomId: string, sessionId: string, now = Date.now()) {
+  const payload = { v: 1 as const, roomId, sessionId, expiresAt: now + REALTIME_TICKET_TTL_MS };
+  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  return `${encoded}.${mac(secret, 'realtime-ticket:v1', encoded)}`;
+}
+
+export function verifyRealtimeTicket(secret: string, ticket: string, now = Date.now()) {
+  const [encoded, signature, extra] = ticket.split('.');
+  if (!encoded || !signature || extra || !same(signature, mac(secret, 'realtime-ticket:v1', encoded))) return null;
+  try {
+    const payload = realtimeTicketSchema.parse(JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')));
+    return payload.expiresAt > now ? payload : null;
+  } catch {
+    return null;
+  }
+}

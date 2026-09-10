@@ -1,7 +1,7 @@
 import { expect, type Page, test } from '@playwright/test';
 
-// E2E do modo LiveKit: mídia real através do SFU, vídeo sintético (canvas) em abas
-// separadas. Sem introspecção de RTCPeerConnection — o transporte é do LiveKit.
+// E2E do modo Cloudflare Realtime: mídia real através do SFU da Cloudflare, vídeo
+// sintético (canvas) em contextos separados. Sem introspecção de RTCPeerConnection.
 const remoteVideo = (page: Page) => page.getByLabel('Transmissão selecionada', { exact: true });
 const shareButton = (page: Page) => page.locator('[data-share]');
 const stopShareButton = (page: Page) => page.locator('[data-stop-share]');
@@ -27,7 +27,6 @@ async function stubDisplayMedia(page: Page, color: string) {
         clearInterval(timer);
         stop();
       };
-      Object.assign(window, { testScreenTrack: track });
       return stream;
     };
   }, color);
@@ -66,7 +65,7 @@ async function showsColor(page: Page, color: 'red' | 'blue') {
             playing: !video.paused && video.currentTime > 0,
           };
         }),
-      { timeout: 20000 },
+      { timeout: 25000 },
     )
     .toEqual({ color, playing: true });
 }
@@ -83,7 +82,7 @@ test('two participants publish through the SFU and each sees the other automatic
   await stubDisplayMedia(a, '#ff0000');
   await stubDisplayMedia(b, '#0000ff');
 
-  await createRoom(a, 'Sala LiveKit');
+  await createRoom(a, 'Sala Cloudflare');
   await enterRoom(a, 'Alice');
   const invite = a.url();
   await b.goto(invite);
@@ -92,24 +91,20 @@ test('two participants publish through the SFU and each sees the other automatic
   await expect(participantCount(a)).toHaveText('2', { timeout: 15000 });
   await expect(b.getByText('Alice', { exact: true })).toBeVisible();
 
-  // No "choose a screen" step: shares appear for everyone as soon as they start.
   await shareButton(a).click();
   await shareButton(b).click();
   await showsColor(a, 'blue');
   await showsColor(b, 'red');
 
-  // Stopping one share is detected and the other stays live.
   await stopShareButton(a).click();
   await expect(b.getByText('Transmissão encerrada', { exact: true })).toBeVisible({ timeout: 15000 });
   await showsColor(a, 'blue');
 
-  // Renaming propagates to other participants.
   await b.getByRole('button', { name: 'Configurações' }).click();
   await b.getByLabel('Alterar seu nome na sala').fill('Bobby');
   await b.getByRole('button', { name: 'Salvar', exact: true }).click();
   await expect(a.locator('#room-sidebar').getByText('Bobby', { exact: true })).toBeVisible({ timeout: 15000 });
 
-  // A participant leaving is reflected in the roster.
   await b.close();
   await expect(participantCount(a)).toHaveText('1', { timeout: 15000 });
 
@@ -136,8 +131,7 @@ test('a third participant sees two simultaneous shares with no watch cap', async
   await shareButton(a!).click();
   await shareButton(b!).click();
 
-  // Carol watches both automatically — the "up to two" cap is gone in LiveKit mode.
-  await expect(c!.locator('.remote-stream-cell')).toHaveCount(2, { timeout: 20000 });
+  await expect(c!.locator('.remote-stream-cell')).toHaveCount(2, { timeout: 25000 });
   await expect
     .poll(
       () =>
@@ -155,7 +149,7 @@ test('a third participant sees two simultaneous shares with no watch cap', async
             })
             .sort(),
         ),
-      { timeout: 25000 },
+      { timeout: 30000 },
     )
     .toEqual(['blue', 'red']);
 

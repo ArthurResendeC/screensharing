@@ -212,7 +212,7 @@ export function RoomStage({
           )}
         </div>
         <p className="stream-limit-notice" role="note">
-          {state.mediaProvider === 'livekit'
+          {state.mediaProvider === 'cloudflare'
             ? 'Todas as telas compartilhadas aparecem aqui automaticamente. Use “Deixar de assistir” para ocultar uma; os áudios podem se sobrepor, então silencie o que precisar.'
             : 'Até duas lives simultâneas. Assistir a duas pode dobrar o uso de internet e processamento; os áudios podem se sobrepor. Silencie uma transmissão se necessário.'}
         </p>

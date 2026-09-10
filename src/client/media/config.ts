@@ -5,7 +5,6 @@ import type { MediaProviderKind } from './types';
 // nova, sem novo build do frontend.
 export type MediaConfig = {
   mediaProvider: MediaProviderKind;
-  livekitUrl?: string;
   maxVideoBitrate?: number;
 };
 
@@ -13,8 +12,7 @@ let current: MediaConfig = { mediaProvider: 'webrtc' };
 
 export function configureMedia(config: MediaConfig) {
   current = {
-    mediaProvider: config.mediaProvider === 'livekit' ? 'livekit' : 'webrtc',
-    livekitUrl: config.livekitUrl || undefined,
+    mediaProvider: config.mediaProvider === 'cloudflare' ? 'cloudflare' : 'webrtc',
     maxVideoBitrate:
       typeof config.maxVideoBitrate === 'number' && config.maxVideoBitrate > 0 ? config.maxVideoBitrate : undefined,
   };

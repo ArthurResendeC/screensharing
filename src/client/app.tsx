@@ -31,8 +31,7 @@ import './styles.css';
 import { applyTheme, loadTheme, type Theme } from './theme';
 
 const publicConfigSchema = z.object({
-  mediaProvider: z.enum(['webrtc', 'livekit']).optional(),
-  livekitUrl: z.string().optional(),
+  mediaProvider: z.enum(['webrtc', 'cloudflare']).optional(),
   maxVideoBitrate: z.number(),
   minVideoBitrate: z.number().optional(),
   startVideoBitrate: z.number().optional(),
@@ -329,7 +328,6 @@ async function bootstrap() {
     configureRtc(config);
     configureMedia({
       mediaProvider: config.mediaProvider ?? 'webrtc',
-      livekitUrl: config.livekitUrl,
       maxVideoBitrate: config.maxVideoBitrate,
     });
   } catch {

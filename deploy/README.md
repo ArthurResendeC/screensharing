@@ -1,76 +1,80 @@
-# Deploy e migração para o LiveKit
+# Deploy e migração para o Cloudflare Realtime
 
 ## Topologia
 
 ```
-React ──► API Bun (Railway)  ──►  Servidor LiveKit (Fly.io)
-          · autentica o convite       · transporte, ICE, SDP
-          · assina o JWT do LiveKit    · ICE/TCP 7881 + TURN/TLS 5349 (UDP: IP dedicado)
-          · GET /livekit/token         · simulcast + dynacast + adaptive stream
-          · WebSocket só p/ create-room · reconexão automática
+React ──► API Bun (Railway)  ──►  Cloudflare Realtime SFU (edge global)
+          · autentica o convite       · transporte, ICE, NAT, TURN
+          · proxy /realtime/* (esconde  · fan-out de tracks
+            o App Secret; ticket HMAC)   · reconexão via re-criação de sessão
+          · WebSocket /signaling
+            (presença + rt-publish)
 ```
 
-O provedor de mídia é escolhido em tempo de execução a partir de `/config.json`
-(`MEDIA_PROVIDER`). Nenhum build novo do frontend é necessário para trocar.
+Cada navegador abre **uma** `RTCPeerConnection` contra a Cloudflare. O WebSocket só
+carrega presença e "quem publicou o quê" (`sessionId` + nomes das tracks). Não há
+servidor de mídia para hospedar.
+
+## Pré-requisito: app Cloudflare Realtime
+
+Em [dash.cloudflare.com → Realtime → SFU](https://dash.cloudflare.com/?to=/:account/realtime/sfu),
+crie um app. Você recebe **App ID** e **App Secret**. Conta gratuita basta.
+
+## Variáveis de ambiente (API Bun no Railway)
+
+| Variável | Obrigatória | Descrição |
+|---|---|---|
+| `MEDIA_PROVIDER` | não | `webrtc` (padrão) ou `cloudflare` — a chave de rollout/rollback |
+| `CLOUDFLARE_REALTIME_APP_ID` | se `cloudflare` | da dashboard; vai no path das chamadas ao SFU |
+| `CLOUDFLARE_REALTIME_APP_SECRET` | se `cloudflare` | Bearer das chamadas ao SFU — **só no servidor**, nunca em `/config.json` |
+| `ROOM_TOKEN_SECRET` | em produção | inalterada — assina convites e o ticket de sessão, ≥ 32 caracteres |
+| `MAX_ROOM_PARTICIPANTS` | não | ausente = sem limite; só afeta o caminho legado de signaling WebRTC |
+| `TURN_URL` / `TURN_USERNAME` / `TURN_CREDENTIAL` | não | TURN extra opcional; a Cloudflare já expõe IP público + STUN |
+
+```bash
+railway variables set \
+  CLOUDFLARE_REALTIME_APP_ID=<app id> \
+  CLOUDFLARE_REALTIME_APP_SECRET=<app secret> \
+  --service ReShare
+```
+
+## Estratégia de migração
+
+1. Publique o código com `MEDIA_PROVIDER` ausente/`webrtc` — produção não muda.
+2. Crie o app Cloudflare Realtime e defina `CLOUDFLARE_REALTIME_APP_ID` / `_APP_SECRET`
+   no Railway; mantenha `MEDIA_PROVIDER=webrtc`.
+3. Numa preview do Railway, `MEDIA_PROVIDER=cloudflare` e rode
+   `bun run test:e2e:cloudflare`; teste em duas abas.
+4. Mude produção para `cloudflare`.
+5. **Rollback:** `MEDIA_PROVIDER=webrtc` + reiniciar. Sem deploy de código.
+6. Depois de estabilizar, um PR posterior pode remover `src/lib/webrtc/**` e o relay
+   offer/answer/ice do `server/signaling.ts` (mantendo `create-room` e a presença).
+
+## Boas práticas
+
+- Mantenha `MEDIA_PROVIDER=webrtc` até `test:e2e:cloudflare` + testes manuais passarem.
+- `CLOUDFLARE_REALTIME_APP_SECRET` só no host da API; nunca em `/config.json` nem no bundle.
+- Ticket de sessão curto (15 min); o cliente pega um novo a cada (re)conexão.
+- Egress: 1.000 GB/mês grátis, depois US$0,05/GB. Só tráfego Cloudflare→cliente conta.
+- CSP/`connect-src`: a mídia vai direto ao SFU da Cloudflare via WebRTC; as chamadas
+  HTTP são todas para a própria origem (`/realtime/*`).
 
 ## Build da API
 
-O Railway continua usando **Railpack** (`bun run build` + `bun run start`), sem
-mudança. O `deploy/Dockerfile` existe para outros hosts Docker / Fly / o
-`docker-compose` local e **não** fica na raiz: um `Dockerfile` na raiz faria o
-Railway trocar o Railpack por ele. Para construir a imagem manualmente:
+O Railway usa **Railpack** (`bun run build` + `bun run start`). O `deploy/Dockerfile`
+existe para outros hosts Docker e fica fora da raiz de propósito (um `Dockerfile` na
+raiz faria o Railway trocar o Railpack por ele):
 
 ```bash
 docker build -f deploy/Dockerfile -t reshare-api .
 docker run -p 3000:3000 -e ROOM_TOKEN_SECRET=... reshare-api
 ```
 
-## Variáveis de ambiente (API Bun)
-
-| Variável                                 | Obrigatória  | Descrição                                                               |
-| ---------------------------------------- | ------------ | ----------------------------------------------------------------------- |
-| `MEDIA_PROVIDER`                         | não          | `webrtc` (padrão) ou `livekit` — a chave de rollout/rollback            |
-| `LIVEKIT_URL`                            | se `livekit` | `wss://reshare-livekit.fly.dev` — devolvida em `/config.json`           |
-| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | se `livekit` | assinam o JWT (só no servidor, nunca em `/config.json`)                 |
-| `LIVEKIT_TOKEN_TTL`                      | não          | validade do JWT, padrão `10m`                                           |
-| `MAX_ROOM_PARTICIPANTS`                  | não          | ausente = sem limite; só afeta o caminho legado de signaling WebRTC     |
-| `ROOM_TOKEN_SECRET`                      | em produção  | inalterada — assina os convites, ≥ 32 caracteres, estável entre deploys |
-
-Servidor LiveKit: `LIVEKIT_KEYS` (`"chave: segredo"`), config em `livekit/livekit.yaml`.
-`REDIS_*` só ao escalar para múltiplos nós.
-
-## Estratégia de migração
-
-1. Publique o código com `MEDIA_PROVIDER` ausente/`webrtc` — produção não muda.
-2. Suba o LiveKit no Fly (`livekit/fly-deploy.md`); defina `LIVEKIT_*` no Railway;
-   mantenha `MEDIA_PROVIDER=webrtc`.
-3. Numa preview do Railway, mude para `MEDIA_PROVIDER=livekit` e rode
-   `bun run test:e2e:livekit`; teste manualmente em Chrome/Edge/Firefox e por uma VPN.
-4. Mude produção para `livekit`.
-5. **Rollback:** `MEDIA_PROVIDER=webrtc` + reiniciar. Sem deploy de código.
-6. Depois de estabilizar, um PR posterior pode remover `src/lib/webrtc/**` e o relay
-   WebRTC do `server/signaling.ts` (mantendo `create-room`). Não faz parte deste PR.
-
-## Boas práticas de produção
-
-- Mantenha `MEDIA_PROVIDER=webrtc` até `test:e2e:livekit` + testes manuais passarem.
-- `LIVEKIT_API_SECRET` só no host da API; nunca em `/config.json` nem no bundle.
-- JWT curto (`10m`): o cliente busca um token novo a cada (re)conexão.
-- Fixe as versões: imagem `livekit/livekit-server`, `livekit-client`, `livekit-server-sdk`.
-- LiveKit atrás de TLS (`wss`); mídia por ICE/TCP 7881 + TURN/TLS 5349. UDP (menor
-  latência) exige IPv4 dedicado no Fly (~US$2/mês) — veja `livekit/fly-deploy.md`.
-- `rtc.use_external_ip: true` + as portas TCP publicadas (7880/7881/5349).
-- `room.empty_timeout` libera salas abandonadas (não há banco para reconciliar).
-- Acompanhe as métricas Prometheus do `livekit-server`; alerte na fração de tráfego
-  via TURN (relay).
-- CSP/`connect-src`: inclua a origem `wss://` do LiveKit.
-
 ## Local
 
 ```bash
-docker compose up -d livekit
-MEDIA_PROVIDER=livekit LIVEKIT_URL=ws://localhost:7880 \
-  LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret bun run dev
-# ou a pilha inteira:
-docker compose up --build
+MEDIA_PROVIDER=cloudflare \
+  CLOUDFLARE_REALTIME_APP_ID=... CLOUDFLARE_REALTIME_APP_SECRET=... \
+  ROOM_TOKEN_SECRET=dev-secret-at-least-32-characters-long \
+  bun run dev
 ```

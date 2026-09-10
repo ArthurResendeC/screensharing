@@ -1,4 +1,4 @@
-// Limitador de tentativas em memória para GET /livekit/token. Espelha o
+// Limitador de tentativas em memória para POST /realtime/session. Espelha o
 // `failedRoomAttempts >= 5` por socket do hub de signaling: como a rota HTTP é sem
 // estado, a contagem fica na instância e zera a cada reinício — igual ao contador
 // atual por conexão. É best-effort atrás de proxies; a credencial assinada continua

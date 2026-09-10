@@ -101,28 +101,29 @@ TURN_CREDENTIAL=...
 
 O servidor entrega essa configuração ao navegador em `/config.json`. Credenciais WebRTC são visíveis ao cliente; prefira credenciais TURN temporárias. Adicione também URLs TCP/TLS oferecidas pelo provedor para redes que bloqueiam UDP.
 
-## Camada de mídia: WebRTC ou LiveKit
+## Camada de mídia: WebRTC ou Cloudflare Realtime
 
 A mídia tem dois provedores atrás de uma mesma interface (`src/client/media/`):
 
 - **`webrtc`** (padrão): malha P2P como descrito acima. Uma `RTCPeerConnection` por
   assinatura, custo de envio na máquina de quem transmite, limite prático de
   participantes, TURN próprio.
-- **`livekit`**: um SFU [LiveKit](https://livekit.io) cuida de transporte, ICE, SDP,
-  NAT, TURN, simulcast, adaptação e reconexão. Cada pessoa envia sua tela uma vez; o
-  servidor distribui. Sem limite de participantes e sem o teto de duas lives — todas
-  as telas compartilhadas aparecem automaticamente (`dynacast` + adaptação contêm o
-  custo no receptor). O `server/signaling.ts` continua só para `create-room`; a
-  entrada usa `GET /livekit/token`, que refaz a mesma validação de convite/senha e
-  assina um JWT.
+- **`cloudflare`**: o SFU [Cloudflare Realtime](https://developers.cloudflare.com/realtime/)
+  cuida de transporte, NAT e TURN no edge global. Cada navegador abre **uma**
+  `RTCPeerConnection` contra a Cloudflare; a tela é enviada uma vez e o SFU
+  distribui. Sem limite de participantes e sem o teto de duas lives — todas as telas
+  aparecem automaticamente. O `server/signaling.ts` continua carregando presença e
+  "quem publicou o quê" (`rt-publish` / `rt-unpublish`); o App Secret fica no
+  servidor e o navegador só fala com o proxy `/realtime/*` da mesma origem.
 
 O provedor é escolhido em tempo de execução por `/config.json`, controlado pela
-variável `MEDIA_PROVIDER` do servidor. Trocar o valor e reiniciar troca o transporte
-de toda sessão nova, sem novo build; o rollback é voltar a variável. O servidor
-LiveKit é implantado à parte — veja [`deploy/`](deploy/), com exemplo para Fly.io,
-`deploy/Dockerfile` e `docker-compose.yml` (o Railway continua no Railpack; o
-Dockerfile fica fora da raiz de propósito). Testes do modo LiveKit:
-`bun run test:e2e:livekit` (exige `docker compose up -d livekit`).
+variável `MEDIA_PROVIDER`. Trocar o valor e reiniciar troca o transporte de toda
+sessão nova, sem novo build; o rollback é voltar a variável. Não há servidor para
+hospedar — só um app Cloudflare Realtime (dashboard → Realtime → SFU) e as
+variáveis `CLOUDFLARE_REALTIME_APP_ID` / `CLOUDFLARE_REALTIME_APP_SECRET`. Egress
+custa US$0,05/GB com 1.000 GB/mês grátis. Testes do modo Cloudflare:
+`bun run test:e2e:cloudflare` (exige as duas variáveis). Detalhes em
+[`deploy/README.md`](deploy/README.md).
 
 ## Deploy na Railway
 

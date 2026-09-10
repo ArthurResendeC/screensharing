@@ -4,19 +4,21 @@ import icon512 from '../src/client/assets/icon-512.png' with { type: 'file' };
 import maskableIcon512 from '../src/client/assets/icon-maskable-512.png' with { type: 'file' };
 import manifest from '../src/client/manifest.webmanifest' with { type: 'text' };
 import serviceWorker from '../src/client/service-worker.js' with { type: 'text' };
-import { createLiveKitTokenHandler } from './livekit/token';
+import { createRealtimeProxy } from './realtime/proxy';
 import { SignalingHub, type Client, type SignalingSocket } from './signaling';
 
 const port = Number(process.env.PORT ?? 3000);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT inválida.');
 
-const mediaProvider = process.env.MEDIA_PROVIDER === 'livekit' ? 'livekit' : 'webrtc';
-const livekitUrl = process.env.LIVEKIT_URL ?? '';
-const livekitApiKey = process.env.LIVEKIT_API_KEY ?? '';
-const livekitApiSecret = process.env.LIVEKIT_API_SECRET ?? '';
-const livekitTokenTtl = process.env.LIVEKIT_TOKEN_TTL || '10m';
-if (mediaProvider === 'livekit' && (!livekitUrl || !livekitApiKey || !livekitApiSecret))
-  throw new Error('MEDIA_PROVIDER=livekit exige LIVEKIT_URL, LIVEKIT_API_KEY e LIVEKIT_API_SECRET.');
+const mediaProvider = process.env.MEDIA_PROVIDER === 'cloudflare' ? 'cloudflare' : 'webrtc';
+const cfAppId = process.env.CLOUDFLARE_REALTIME_APP_ID ?? '';
+const cfAppSecret = process.env.CLOUDFLARE_REALTIME_APP_SECRET ?? '';
+if (mediaProvider === 'cloudflare' && (!cfAppId || !cfAppSecret))
+  throw new Error('MEDIA_PROVIDER=cloudflare exige CLOUDFLARE_REALTIME_APP_ID e CLOUDFLARE_REALTIME_APP_SECRET.');
+
+const turnConfig = process.env.TURN_URL
+  ? { urls: process.env.TURN_URL, username: process.env.TURN_USERNAME, credential: process.env.TURN_CREDENTIAL }
+  : null;
 
 // Ausente = sem limite. Só limita o caminho legado de signaling WebRTC.
 const maxRoomParticipants = Number(process.env.MAX_ROOM_PARTICIPANTS) || undefined;
@@ -34,16 +36,18 @@ const roomTokenSecret = configuredRoomTokenSecret || 'development-only-room-toke
 const hub = new SignalingHub(roomTokenSecret, maxRoomParticipants);
 const iconHeaders = { 'cache-control': 'public, max-age=604800' };
 
-// Rota sem estado: só valida o convite/senha e assina o JWT do LiveKit. Só existe
-// quando o LiveKit está configurado, para deploys WebRTC não mudarem.
-const livekitToken =
-  mediaProvider === 'livekit'
-    ? createLiveKitTokenHandler({
+// Proxy sem estado para o SFU Cloudflare Realtime (valida a sala, esconde o App
+// Secret). Só existe quando configurado, para deploys WebRTC não mudarem.
+const realtimeProxy =
+  mediaProvider === 'cloudflare'
+    ? createRealtimeProxy({
         roomTokenSecret,
-        apiKey: livekitApiKey,
-        apiSecret: livekitApiSecret,
-        livekitUrl,
-        tokenTtl: livekitTokenTtl,
+        appId: cfAppId,
+        appSecret: cfAppSecret,
+        iceServers: [
+          { urls: 'stun:stun.cloudflare.com:3478' },
+          ...(turnConfig?.urls ? [turnConfig as RTCIceServer] : []),
+        ],
       })
     : null;
 
@@ -65,6 +69,8 @@ function originAllowed(request: Request) {
 function tokenRequestAllowed(request: Request) {
   return request.headers.get('origin') ? originAllowed(request) : true;
 }
+
+const forbidden = () => new Response('Origin not allowed\n', { status: 403 });
 
 const server = Bun.serve<Client>({
   hostname: '0.0.0.0',
@@ -89,28 +95,25 @@ const server = Bun.serve<Client>({
       Response.json(
         {
           mediaProvider,
-          // O LiveKit cuida de STUN/TURN; a config de TURN só vale para o modo mesh.
-          ...(mediaProvider === 'livekit' ? { livekitUrl } : {}),
           maxVideoBitrate: Number(process.env.MAX_VIDEO_BITRATE ?? 15_000_000),
           minVideoBitrate: Number(process.env.MIN_VIDEO_BITRATE ?? 2_500_000),
           startVideoBitrate: Number(process.env.START_VIDEO_BITRATE ?? 8_000_000),
-          turn:
-            mediaProvider === 'webrtc' && process.env.TURN_URL
-              ? {
-                  urls: process.env.TURN_URL,
-                  username: process.env.TURN_USERNAME,
-                  credential: process.env.TURN_CREDENTIAL,
-                }
-              : null,
+          // TURN opcional; entregue ao cliente em ambos os modos (o Cloudflare
+          // adiciona seu próprio STUN por baixo).
+          turn: turnConfig,
         },
         { headers: { 'cache-control': 'no-store' } },
       ),
-    ...(livekitToken
+    ...(realtimeProxy
       ? {
-          '/livekit/token': (request: Request) =>
-            tokenRequestAllowed(request)
-              ? livekitToken(request)
-              : new Response('Origin not allowed\n', { status: 403 }),
+          '/realtime/session': (request: Request) =>
+            tokenRequestAllowed(request) ? realtimeProxy(request) : forbidden(),
+          '/realtime/tracks/new': (request: Request) =>
+            tokenRequestAllowed(request) ? realtimeProxy(request) : forbidden(),
+          '/realtime/renegotiate': (request: Request) =>
+            tokenRequestAllowed(request) ? realtimeProxy(request) : forbidden(),
+          '/realtime/tracks/close': (request: Request) =>
+            tokenRequestAllowed(request) ? realtimeProxy(request) : forbidden(),
         }
       : {}),
   },

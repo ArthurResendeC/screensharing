@@ -278,7 +278,7 @@ export function RoomDebug({ controller, socketState }: { controller: MediaProvid
       </details>
       {controller.getPeers() === null ? (
         <p>
-          O transporte de mídia é gerenciado pelo LiveKit. Para estatísticas RTP detalhadas, use
+          O transporte de mídia é gerenciado pelo servidor de mídia. Para estatísticas RTP detalhadas, use
           <code> chrome://webrtc-internals</code> ou <code>about:webrtc</code> no navegador.
         </p>
       ) : (

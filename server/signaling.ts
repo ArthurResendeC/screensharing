@@ -1,4 +1,9 @@
-import { clientMessageSchema, MAX_WATCHED_STREAMS, type ServerMessage } from '../src/lib/signaling/messages';
+import {
+  clientMessageSchema,
+  MAX_WATCHED_STREAMS,
+  type RtPublication,
+  type ServerMessage,
+} from '../src/lib/signaling/messages';
 import {
   issueRoomAccessToken,
   issueRoomCredential,
@@ -22,6 +27,8 @@ export type Client = {
   roomId?: string;
   alias?: string;
   sharing: boolean;
+  // Onde encontrar as tracks deste cliente no SFU Cloudflare (modo cloudflare).
+  rtPublication?: RtPublication;
   watching: Map<string, Subscription>;
   alive: boolean;
   count: number;
@@ -76,6 +83,7 @@ export class SignalingHub {
       peerId: client.id,
       sharing: client.sharing,
       alias: client.alias ?? null,
+      rt: client.rtPublication ?? null,
     }));
   }
 
@@ -100,6 +108,7 @@ export class SignalingHub {
 
   private stopPublishing(publisher: Client, room: Room) {
     publisher.sharing = false;
+    publisher.rtPublication = undefined;
     for (const viewer of room.members.values()) {
       for (const subscription of viewer.watching.values())
         if (subscription.publisherId === publisher.id) this.unsubscribe(viewer, room, subscription.sessionId);
@@ -240,6 +249,17 @@ export class SignalingHub {
     if (message.type === 'sharing-started' || message.type === 'sharing-stopped') {
       if (message.type === 'sharing-started') client.sharing = true;
       else this.stopPublishing(client, room);
+      this.broadcast(room);
+      return;
+    }
+    if (message.type === 'rt-publish') {
+      client.sharing = true;
+      client.rtPublication = { sessionId: message.sessionId, video: message.video, audio: message.audio };
+      this.broadcast(room);
+      return;
+    }
+    if (message.type === 'rt-unpublish') {
+      this.stopPublishing(client, room);
       this.broadcast(room);
       return;
     }

@@ -14,12 +14,10 @@
     "format:check": "oxfmt --check",
     "test": "bun test ./tests/*.test.ts",
     "test:e2e": "playwright test",
-    "test:e2e:livekit": "playwright test --config playwright.livekit.config.ts"
+    "test:e2e:cloudflare": "playwright test --config playwright.cloudflare.config.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
-    "livekit-client": "^2.22.3",
-    "livekit-server-sdk": "^2.19.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zod": "^4.0.0"

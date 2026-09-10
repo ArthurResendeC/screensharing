@@ -209,7 +209,15 @@ async function activeCounts(page: Page) {
   });
 }
 async function cleared(page: Page) {
-  await expect.poll(() => remoteVideo(page).evaluate((video: HTMLVideoElement) => video.srcObject === null)).toBe(true);
+  // "Cleared" covers both outcomes: the stream element stays but is emptied, or the
+  // grid unmounts entirely (the "Transmissão encerrada" screen or the picker).
+  await expect
+    .poll(async () => {
+      const video = remoteVideo(page);
+      if ((await video.count()) === 0) return true;
+      return video.evaluate((element: HTMLVideoElement) => element.srcObject === null);
+    })
+    .toBe(true);
 }
 
 test('protected room validates its password and each browser manages its own favorite', async ({ page, browser }) => {

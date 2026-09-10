@@ -55,8 +55,20 @@ const answer = z
   })
   .strict();
 const ice = z.object({ type: z.literal('ice-candidate'), ...route, candidate: candidateSchema }).strict();
+// Publicação no SFU Cloudflare Realtime: onde encontrar as tracks de quem compartilha.
+// Sempre null no modo mesh WebRTC.
+const trackName = z.string().min(1).max(128);
+export const rtPublicationSchema = z
+  .object({ sessionId: z.string().min(1).max(128), video: trackName, audio: trackName.nullable() })
+  .strict();
+export type RtPublication = z.infer<typeof rtPublicationSchema>;
 const participant = z
-  .object({ peerId: id, sharing: z.boolean(), alias: z.string().max(ALIAS_MAX_LENGTH).nullable() })
+  .object({
+    peerId: id,
+    sharing: z.boolean(),
+    alias: z.string().max(ALIAS_MAX_LENGTH).nullable(),
+    rt: rtPublicationSchema.nullable(),
+  })
   .strict();
 export type Participant = z.infer<typeof participant>;
 
@@ -77,6 +89,8 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   ice,
   z.object({ type: z.literal('sharing-started') }).strict(),
   z.object({ type: z.literal('sharing-stopped') }).strict(),
+  rtPublicationSchema.extend({ type: z.literal('rt-publish') }).strict(),
+  z.object({ type: z.literal('rt-unpublish') }).strict(),
   z.object({ type: z.literal('set-alias'), alias: aliasSchema }).strict(),
   z.object({ type: z.literal('watch'), targetPeerId: id.nullable(), sessionId: id }).strict(),
   z.object({ type: z.literal('ping') }).strict(),
