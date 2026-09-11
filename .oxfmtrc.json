@@ -2,6 +2,12 @@
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "singleQuote": true,
   "arrowParens": "avoid",
-  "printWidth": 120,
-  "ignorePatterns": ["dist/**", "bun.lock", "playwright-report/**", "test-results/**", "deploy/**"]
+  "printWidth": 80,
+  "ignorePatterns": [
+    "dist/**",
+    "bun.lock",
+    "playwright-report/**",
+    "test-results/**",
+    "deploy/**"
+  ]
 }

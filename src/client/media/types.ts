@@ -37,7 +37,12 @@ export type ScreenShareState = {
   watcherIds: string[];
   error: string;
   joinError: string;
-  accessError: '' | 'invalid-invite' | 'password-required' | 'wrong-password' | 'too-many-attempts';
+  accessError:
+    | ''
+    | 'invalid-invite'
+    | 'password-required'
+    | 'wrong-password'
+    | 'too-many-attempts';
   roomName: string;
   passwordProtected: boolean;
   accessToken?: string;

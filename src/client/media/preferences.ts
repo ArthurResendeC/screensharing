@@ -18,12 +18,28 @@ const DEGRADATION_CHOICES = ['framerate', 'balanced', 'resolution'] as const;
 const CAPTURE_CHOICES = ['fluid', 'balanced', 'sharp'] as const;
 
 export const CAPTURE_PRESETS: Record<CaptureQuality, MediaTrackConstraints> = {
-  fluid: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } },
-  balanced: { width: { ideal: 2560 }, height: { ideal: 1440 }, frameRate: { ideal: 30 } },
-  sharp: { width: { ideal: 2560 }, height: { ideal: 1440 }, frameRate: { ideal: 60 } },
+  fluid: {
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+    frameRate: { ideal: 60 },
+  },
+  balanced: {
+    width: { ideal: 2560 },
+    height: { ideal: 1440 },
+    frameRate: { ideal: 30 },
+  },
+  sharp: {
+    width: { ideal: 2560 },
+    height: { ideal: 1440 },
+    frameRate: { ideal: 60 },
+  },
 };
 
-function storedChoice<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+function storedChoice<T extends string>(
+  key: string,
+  allowed: readonly T[],
+  fallback: T,
+): T {
   try {
     const value = localStorage.getItem(key) as T;
     return allowed.includes(value) ? value : fallback;
@@ -34,7 +50,9 @@ function storedChoice<T extends string>(key: string, allowed: readonly T[], fall
 
 export function storedAlias() {
   try {
-    return (localStorage.getItem(ALIAS_STORAGE_KEY) ?? '').trim().slice(0, ALIAS_MAX_LENGTH);
+    return (localStorage.getItem(ALIAS_STORAGE_KEY) ?? '')
+      .trim()
+      .slice(0, ALIAS_MAX_LENGTH);
   } catch {
     return '';
   }
@@ -49,7 +67,11 @@ export function persistAlias(alias: string) {
 }
 
 export function storedDegradation(): VideoDegradation {
-  return storedChoice(DEGRADATION_STORAGE_KEY, DEGRADATION_CHOICES, 'framerate');
+  return storedChoice(
+    DEGRADATION_STORAGE_KEY,
+    DEGRADATION_CHOICES,
+    'framerate',
+  );
 }
 
 export function persistDegradation(value: VideoDegradation) {
@@ -73,7 +95,9 @@ export function persistCaptureQuality(value: CaptureQuality) {
 }
 
 export function storedCodecPreference(): VideoCodecPreference {
-  return normalizeVideoCodecPreference(storedChoice(CODEC_STORAGE_KEY, VIDEO_CODEC_PREFERENCES, 'auto'));
+  return normalizeVideoCodecPreference(
+    storedChoice(CODEC_STORAGE_KEY, VIDEO_CODEC_PREFERENCES, 'auto'),
+  );
 }
 
 export function persistCodecPreference(value: VideoCodecPreference) {

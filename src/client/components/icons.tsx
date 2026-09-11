@@ -129,7 +129,14 @@ export function PanelIcon({ collapsed = false }: { collapsed?: boolean }) {
 
 export function LayoutColumnsIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <rect x="3" y="4" width="8" height="16" rx="1.5" />
       <rect x="13" y="4" width="8" height="16" rx="1.5" />
     </svg>
@@ -138,7 +145,14 @@ export function LayoutColumnsIcon() {
 
 export function LayoutRowsIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <rect x="3" y="4" width="18" height="7" rx="1.5" />
       <rect x="3" y="13" width="18" height="7" rx="1.5" />
     </svg>
@@ -207,7 +221,14 @@ export function StopIcon() {
 
 export function VolumeIcon() {
   return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <polygon points="11 5 6 9 2.5 9 2.5 15 6 15 11 19" />
       <path d="M15 9a4 4 0 0 1 0 6" />
       <path d="M18 6a8 8 0 0 1 0 12" />
@@ -235,9 +256,24 @@ export function VolumeMutedIcon() {
 
 export function PipIcon() {
   return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <rect x="2.5" y="4" width="19" height="16" rx="2" />
-      <rect x="12" y="11" width="7" height="6" rx="1" fill="currentColor" stroke="none" />
+      <rect
+        x="12"
+        y="11"
+        width="7"
+        height="6"
+        rx="1"
+        fill="currentColor"
+        stroke="none"
+      />
     </svg>
   );
 }

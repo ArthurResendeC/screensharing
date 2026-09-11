@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { roomAccessTokenSchema, roomCredentialSchema, roomIdSchema, roomNameSchema } from '../lib/signaling/messages';
+import {
+  roomAccessTokenSchema,
+  roomCredentialSchema,
+  roomIdSchema,
+  roomNameSchema,
+} from '../lib/signaling/messages';
 
 const FAVORITES_KEY = 'screen-share:favorite-rooms';
 const RECENT_KEY = 'screen-share:last-room-v2';
@@ -16,7 +21,9 @@ const storedRoomSchema = z
     favoritedAt: z.number().finite().nonnegative(),
   })
   .strict();
-const favoritesSchema = z.object({ version: z.literal(1), rooms: z.array(z.unknown()) }).strict();
+const favoritesSchema = z
+  .object({ version: z.literal(1), rooms: z.array(z.unknown()) })
+  .strict();
 const roomAccessSchema = z
   .object({
     roomId: roomIdSchema,
@@ -25,10 +32,15 @@ const roomAccessSchema = z
     accessTokenExpiresAt: z.number().int().positive(),
   })
   .strict();
-const accessListSchema = z.object({ version: z.literal(1), rooms: z.array(z.unknown()) }).strict();
+const accessListSchema = z
+  .object({ version: z.literal(1), rooms: z.array(z.unknown()) })
+  .strict();
 
 export type StoredRoom = z.infer<typeof storedRoomSchema>;
-export type RoomInvite = Pick<StoredRoom, 'roomId' | 'credential' | 'accessToken' | 'accessTokenExpiresAt'>;
+export type RoomInvite = Pick<
+  StoredRoom,
+  'roomId' | 'credential' | 'accessToken' | 'accessTokenExpiresAt'
+>;
 
 function readJson(key: string): unknown {
   try {
@@ -55,7 +67,9 @@ export function isFavoriteRoom(roomId: string) {
 }
 
 export function saveFavoriteRoom(room: Omit<StoredRoom, 'favoritedAt'>) {
-  const rooms = listFavoriteRooms().filter(entry => entry.roomId !== room.roomId);
+  const rooms = listFavoriteRooms().filter(
+    entry => entry.roomId !== room.roomId,
+  );
   rooms.unshift({ ...room, favoritedAt: Date.now() });
   try {
     localStorage.setItem(FAVORITES_KEY, JSON.stringify({ version: 1, rooms }));
@@ -75,7 +89,10 @@ export function removeFavoriteRoom(roomId: string) {
 
 export function rememberRecentRoom(room: Omit<StoredRoom, 'favoritedAt'>) {
   try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify({ ...room, favoritedAt: Date.now() }));
+    localStorage.setItem(
+      RECENT_KEY,
+      JSON.stringify({ ...room, favoritedAt: Date.now() }),
+    );
     localStorage.removeItem(LEGACY_RECENT_KEY);
   } catch {
     // The room remains usable in this tab.
@@ -86,7 +103,11 @@ export function rememberRoomAccess(room: Omit<StoredRoom, 'favoritedAt'>) {
   rememberRecentRoom(room);
   if (room.accessToken && room.accessTokenExpiresAt) {
     const rooms = listRoomAccess()
-      .filter(entry => entry.accessTokenExpiresAt > Date.now() && entry.roomId !== room.roomId)
+      .filter(
+        entry =>
+          entry.accessTokenExpiresAt > Date.now() &&
+          entry.roomId !== room.roomId,
+      )
       .concat({
         roomId: room.roomId,
         credential: room.credential,
@@ -99,10 +120,14 @@ export function rememberRoomAccess(room: Omit<StoredRoom, 'favoritedAt'>) {
       // The current session remains authenticated even if storage is unavailable.
     }
   }
-  const favorite = listFavoriteRooms().find(entry => entry.roomId === room.roomId);
+  const favorite = listFavoriteRooms().find(
+    entry => entry.roomId === room.roomId,
+  );
   if (!favorite) return;
   const rooms = listFavoriteRooms().map(entry =>
-    entry.roomId === room.roomId ? { ...room, favoritedAt: entry.favoritedAt } : entry,
+    entry.roomId === room.roomId
+      ? { ...room, favoritedAt: entry.favoritedAt }
+      : entry,
   );
   try {
     localStorage.setItem(FAVORITES_KEY, JSON.stringify({ version: 1, rooms }));
@@ -121,7 +146,9 @@ function listRoomAccess() {
 }
 
 export function findRoomAccess(roomId: string, credential: string) {
-  return listRoomAccess().find(entry => entry.roomId === roomId && entry.credential === credential);
+  return listRoomAccess().find(
+    entry => entry.roomId === roomId && entry.credential === credential,
+  );
 }
 
 export function recallRecentRoom() {
@@ -131,11 +158,16 @@ export function recallRecentRoom() {
 
 export function findStoredInvite(roomId: string): StoredRoom | null {
   const recent = recallRecentRoom();
-  return listFavoriteRooms().find(room => room.roomId === roomId) ?? (recent?.roomId === roomId ? recent : null);
+  return (
+    listFavoriteRooms().find(room => room.roomId === roomId) ??
+    (recent?.roomId === roomId ? recent : null)
+  );
 }
 
 export function validRoomAccessToken(invite: RoomInvite, now = Date.now()) {
-  return invite.accessToken && invite.accessTokenExpiresAt && invite.accessTokenExpiresAt > now
+  return invite.accessToken &&
+    invite.accessTokenExpiresAt &&
+    invite.accessTokenExpiresAt > now
     ? invite.accessToken
     : undefined;
 }
@@ -148,7 +180,9 @@ export function roomPasswordProtected(credential: string): boolean | null {
       .replaceAll('-', '+')
       .replaceAll('_', '/')
       .padEnd(Math.ceil(encoded.length / 4) * 4, '=');
-    const bytes = Uint8Array.from(atob(base64), character => character.charCodeAt(0));
+    const bytes = Uint8Array.from(atob(base64), character =>
+      character.charCodeAt(0),
+    );
     const payload = z
       .object({ v: z.literal(1), passwordProof: z.string().nullable() })
       .passthrough()
@@ -171,11 +205,14 @@ export function parseInvite(value: string): RoomInvite | null {
     if (url.origin !== location.origin) return null;
     const match = url.pathname.match(/^\/room\/([^/]+)\/?$/);
     const roomId = match ? decodeURIComponent(match[1]!) : '';
-    const credential = new URLSearchParams(url.hash.slice(1)).get('credential') ?? '';
-    const parsed = z.object({ roomId: roomIdSchema, credential: roomCredentialSchema }).safeParse({
-      roomId,
-      credential,
-    });
+    const credential =
+      new URLSearchParams(url.hash.slice(1)).get('credential') ?? '';
+    const parsed = z
+      .object({ roomId: roomIdSchema, credential: roomCredentialSchema })
+      .safeParse({
+        roomId,
+        credential,
+      });
     return parsed.success ? parsed.data : null;
   } catch {
     return null;

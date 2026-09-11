@@ -10,7 +10,10 @@
   "env": { "builtin": true, "es2024": true, "browser": true, "node": true },
   "ignorePatterns": ["dist/**", "playwright-report/**", "test-results/**"],
   "rules": {
-    "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-unused-vars": [
+      "error",
+      { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }
+    ],
     "typescript/no-floating-promises": "error",
     "typescript/no-misused-promises": "error",
     "typescript/await-thenable": "error"

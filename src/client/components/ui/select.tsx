@@ -1,13 +1,16 @@
 import { Select as SelectPrimitive } from '@base-ui/react/select';
 import type { ComponentProps } from 'react';
 
-const classes = (...values: Array<string | undefined>) => values.filter(Boolean).join(' ');
+const classes = (...values: Array<string | undefined>) =>
+  values.filter(Boolean).join(' ');
 
 function mergeClassName<State>(
   base: string,
   className: string | ((state: State) => string | undefined) | undefined,
 ): string | ((state: State) => string) {
-  return typeof className === 'function' ? state => classes(base, className(state)) : classes(base, className);
+  return typeof className === 'function'
+    ? state => classes(base, className(state))
+    : classes(base, className);
 }
 
 function ChevronDownIcon() {
@@ -38,17 +41,29 @@ const Select = SelectPrimitive.Root;
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
-    <SelectPrimitive.Group data-slot="select-group" className={mergeClassName('select-group', className)} {...props} />
+    <SelectPrimitive.Group
+      data-slot="select-group"
+      className={mergeClassName('select-group', className)}
+      {...props}
+    />
   );
 }
 
 function SelectValue({ className, ...props }: SelectPrimitive.Value.Props) {
   return (
-    <SelectPrimitive.Value data-slot="select-value" className={mergeClassName('select-value', className)} {...props} />
+    <SelectPrimitive.Value
+      data-slot="select-value"
+      className={mergeClassName('select-value', className)}
+      {...props}
+    />
   );
 }
 
-function SelectTrigger({ className, children, ...props }: SelectPrimitive.Trigger.Props) {
+function SelectTrigger({
+  className,
+  children,
+  ...props
+}: SelectPrimitive.Trigger.Props) {
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
@@ -73,7 +88,10 @@ function SelectContent({
   alignItemWithTrigger = false,
   ...props
 }: SelectPrimitive.Popup.Props &
-  Pick<SelectPrimitive.Positioner.Props, 'align' | 'alignOffset' | 'side' | 'sideOffset' | 'alignItemWithTrigger'>) {
+  Pick<
+    SelectPrimitive.Positioner.Props,
+    'align' | 'alignOffset' | 'side' | 'sideOffset' | 'alignItemWithTrigger'
+  >) {
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner
@@ -98,9 +116,17 @@ function SelectContent({
   );
 }
 
-function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Props) {
+function SelectItem({
+  className,
+  children,
+  ...props
+}: SelectPrimitive.Item.Props) {
   return (
-    <SelectPrimitive.Item data-slot="select-item" className={mergeClassName('select-item', className)} {...props}>
+    <SelectPrimitive.Item
+      data-slot="select-item"
+      className={mergeClassName('select-item', className)}
+      {...props}
+    >
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
       <SelectPrimitive.ItemIndicator className="select-item-indicator">
         <CheckIcon />
@@ -109,7 +135,10 @@ function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Prop
   );
 }
 
-function SelectScrollUpButton({ className, ...props }: ComponentProps<typeof SelectPrimitive.ScrollUpArrow>) {
+function SelectScrollUpButton({
+  className,
+  ...props
+}: ComponentProps<typeof SelectPrimitive.ScrollUpArrow>) {
   return (
     <SelectPrimitive.ScrollUpArrow
       data-slot="select-scroll-up-button"
@@ -121,7 +150,10 @@ function SelectScrollUpButton({ className, ...props }: ComponentProps<typeof Sel
   );
 }
 
-function SelectScrollDownButton({ className, ...props }: ComponentProps<typeof SelectPrimitive.ScrollDownArrow>) {
+function SelectScrollDownButton({
+  className,
+  ...props
+}: ComponentProps<typeof SelectPrimitive.ScrollDownArrow>) {
   return (
     <SelectPrimitive.ScrollDownArrow
       data-slot="select-scroll-down-button"
@@ -133,4 +165,11 @@ function SelectScrollDownButton({ className, ...props }: ComponentProps<typeof S
   );
 }
 
-export { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue };
+export {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+};

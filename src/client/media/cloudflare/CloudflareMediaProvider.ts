@@ -1,5 +1,9 @@
 import { connectSignaling } from '../../../lib/signaling/client';
-import { ALIAS_MAX_LENGTH, type Participant, type ServerMessage } from '../../../lib/signaling/messages';
+import {
+  ALIAS_MAX_LENGTH,
+  type Participant,
+  type ServerMessage,
+} from '../../../lib/signaling/messages';
 import {
   normalizeVideoCodecPreference,
   setVideoCodecPreference,
@@ -27,7 +31,13 @@ import {
   storedCodecPreference,
   storedDegradation,
 } from '../preferences';
-import { ACCENTS, type CaptureQuality, type MediaProvider, type RemoteStream, type ScreenShareState } from '../types';
+import {
+  ACCENTS,
+  type CaptureQuality,
+  type MediaProvider,
+  type RemoteStream,
+  type ScreenShareState,
+} from '../types';
 import {
   createRealtimeSession,
   RealtimeError,
@@ -39,8 +49,18 @@ import {
 import { FifoQueue, waitForConnected, waitForIceGathering } from './session';
 
 type Listener = () => void;
-type Subscription = { videoMid: string; audioMid?: string; stream: MediaStream; publisherSessionId: string };
-type LocalPublication = { videoName: string; videoMid: string; audioName: string | null; audioMid?: string };
+type Subscription = {
+  videoMid: string;
+  audioMid?: string;
+  stream: MediaStream;
+  publisherSessionId: string;
+};
+type LocalPublication = {
+  videoName: string;
+  videoMid: string;
+  audioName: string | null;
+  audioMid?: string;
+};
 
 // Provedor de mídia sobre o SFU Cloudflare Realtime. Uma RTCPeerConnection por
 // navegador contra o edge da Cloudflare; o WebSocket carrega presença e "quem
@@ -60,7 +80,10 @@ export class CloudflareMediaProvider implements MediaProvider {
   private sendTransceivers: RTCRtpTransceiver[] = [];
   private readonly subscriptions = new Map<string, Subscription>();
   private readonly subscribeRetries = new Map<string, number>();
-  private readonly midToPeer = new Map<string, { peerId: string; kind: 'video' | 'audio' }>();
+  private readonly midToPeer = new Map<
+    string,
+    { peerId: string; kind: 'video' | 'audio' }
+  >();
   private readonly hidden = new Set<string>();
   private members: Participant[] = [];
   private membersSeeded = false;
@@ -225,10 +248,14 @@ export class CloudflareMediaProvider implements MediaProvider {
 
   async copyInvite() {
     try {
-      await navigator.clipboard.writeText(inviteUrl({ roomId: this.roomId, credential: this.credential }));
+      await navigator.clipboard.writeText(
+        inviteUrl({ roomId: this.roomId, credential: this.credential }),
+      );
       this.update({ inviteCopied: true });
     } catch {
-      this.setError('Não foi possível copiar. Copie a URL da barra do navegador.');
+      this.setError(
+        'Não foi possível copiar. Copie a URL da barra do navegador.',
+      );
     }
   }
 
@@ -245,10 +272,13 @@ export class CloudflareMediaProvider implements MediaProvider {
 
   async share() {
     const seq = this.sessionSeq;
-    if (!this.joined || !this.pc || this.state.sharing || this.capturing) return;
+    if (!this.joined || !this.pc || this.state.sharing || this.capturing)
+      return;
     this.update({ error: '', endedReason: null, endedPeerId: null });
     if (!window.isSecureContext || !navigator.mediaDevices?.getDisplayMedia) {
-      this.setError('Captura de tela exige HTTPS (ou localhost) e um navegador compatível.');
+      this.setError(
+        'Captura de tela exige HTTPS (ou localhost) e um navegador compatível.',
+      );
       return;
     }
     this.capturing = true;
@@ -263,7 +293,8 @@ export class CloudflareMediaProvider implements MediaProvider {
         return;
       }
       const screenTrack = captured.getVideoTracks()[0];
-      if (!screenTrack) throw new Error('A captura não retornou uma track de vídeo.');
+      if (!screenTrack)
+        throw new Error('A captura não retornou uma track de vídeo.');
       screenTrack.contentHint = 'motion';
       screenTrack.onended = () => this.stopSharing(true);
       this.localStream = captured;
@@ -277,7 +308,11 @@ export class CloudflareMediaProvider implements MediaProvider {
         this.handleTrackError(seq, error);
       } else {
         this.teardownCapture();
-        this.setError(error instanceof Error ? `Não foi possível capturar: ${error.message}` : 'Captura cancelada.');
+        this.setError(
+          error instanceof Error
+            ? `Não foi possível capturar: ${error.message}`
+            : 'Captura cancelada.',
+        );
       }
     } finally {
       this.capturing = false;
@@ -292,7 +327,9 @@ export class CloudflareMediaProvider implements MediaProvider {
     const audioTrack = captured.getAudioTracks()[0];
     const videoTx = pc.addTransceiver(videoTrack, { direction: 'sendonly' });
     setVideoCodecPreference(videoTx, this.state.codecPreference);
-    const audioTx = audioTrack ? pc.addTransceiver(audioTrack, { direction: 'sendonly' }) : undefined;
+    const audioTx = audioTrack
+      ? pc.addTransceiver(audioTrack, { direction: 'sendonly' })
+      : undefined;
 
     // Sem munge de SDP para o SFU: os hints x-google-*-bitrate são específicos de
     // browser-para-browser e o Cloudflare devolve uma answer que o Chrome não
@@ -305,17 +342,30 @@ export class CloudflareMediaProvider implements MediaProvider {
 
     const videoName = crypto.randomUUID();
     const audioName = audioTx ? crypto.randomUUID() : null;
-    const tracks: TrackRequest[] = [{ location: 'local', mid: videoTx.mid!, trackName: videoName }];
-    if (audioTx && audioName) tracks.push({ location: 'local', mid: audioTx.mid!, trackName: audioName });
+    const tracks: TrackRequest[] = [
+      { location: 'local', mid: videoTx.mid!, trackName: videoName },
+    ];
+    if (audioTx && audioName)
+      tracks.push({
+        location: 'local',
+        mid: audioTx.mid!,
+        trackName: audioName,
+      });
 
     const res = await realtimeTracksNew(this.ticket, {
       sessionDescription: { type: 'offer', sdp: pc.localDescription!.sdp },
       tracks,
     });
     if (!this.isCurrent(seq)) return;
-    if (res.sessionDescription) await pc.setRemoteDescription(res.sessionDescription);
+    if (res.sessionDescription)
+      await pc.setRemoteDescription(res.sessionDescription);
 
-    this.publication = { videoName, videoMid: videoTx.mid!, audioName, audioMid: audioTx?.mid ?? undefined };
+    this.publication = {
+      videoName,
+      videoMid: videoTx.mid!,
+      audioName,
+      audioMid: audioTx?.mid ?? undefined,
+    };
     this.sendTransceivers = audioTx ? [videoTx, audioTx] : [videoTx];
     await this.applyEncodeParameters();
 
@@ -325,7 +375,12 @@ export class CloudflareMediaProvider implements MediaProvider {
     this.startCaptureInfo(captured);
     await waitForConnected(pc);
     if (!this.isCurrent(seq)) return;
-    this.channel?.send({ type: 'rt-publish', sessionId: this.cfSessionId!, video: videoName, audio: audioName });
+    this.channel?.send({
+      type: 'rt-publish',
+      sessionId: this.cfSessionId!,
+      video: videoName,
+      audio: audioName,
+    });
   }
 
   private startCaptureInfo(captured: MediaStream) {
@@ -349,7 +404,9 @@ export class CloudflareMediaProvider implements MediaProvider {
       const parameters = sender.getParameters();
       if (!parameters.encodings?.length) continue;
       parameters.degradationPreference = VIDEO_DEGRADATION_PREFERENCE;
-      if (MAX_VIDEO_BITRATE) for (const encoding of parameters.encodings) encoding.maxBitrate = MAX_VIDEO_BITRATE;
+      if (MAX_VIDEO_BITRATE)
+        for (const encoding of parameters.encodings)
+          encoding.maxBitrate = MAX_VIDEO_BITRATE;
       try {
         await sender.setParameters(parameters);
       } catch {
@@ -366,8 +423,13 @@ export class CloudflareMediaProvider implements MediaProvider {
     this.publication = null;
     this.teardownCapture();
     if (publication && ticket) {
-      const mids = [publication.videoMid, ...(publication.audioMid ? [publication.audioMid] : [])];
-      void this.queue.run(() => realtimeTracksClose(ticket, mids)).catch(() => {});
+      const mids = [
+        publication.videoMid,
+        ...(publication.audioMid ? [publication.audioMid] : []),
+      ];
+      void this.queue
+        .run(() => realtimeTracksClose(ticket, mids))
+        .catch(() => {});
     }
     for (const tx of this.sendTransceivers) {
       try {
@@ -384,7 +446,8 @@ export class CloudflareMediaProvider implements MediaProvider {
         // Reconnection announces the change.
       }
     }
-    if (notify && wasActive) this.update({ endedReason: 'me', endedPeerId: null });
+    if (notify && wasActive)
+      this.update({ endedReason: 'me', endedPeerId: null });
   }
 
   private teardownCapture() {
@@ -396,7 +459,12 @@ export class CloudflareMediaProvider implements MediaProvider {
     });
     this.localStream = null;
     this.capturing = false;
-    this.update({ sharing: false, capturing: false, captureInfo: '', localStream: null });
+    this.update({
+      sharing: false,
+      capturing: false,
+      captureInfo: '',
+      localStream: null,
+    });
   }
 
   // Publicação falhou mas queremos re-tentar no reconnect: para os timers e some
@@ -405,14 +473,21 @@ export class CloudflareMediaProvider implements MediaProvider {
     if (this.settingsTimer) clearInterval(this.settingsTimer);
     this.settingsTimer = undefined;
     this.capturing = false;
-    this.update({ sharing: false, capturing: false, captureInfo: '', localStream: null });
+    this.update({
+      sharing: false,
+      capturing: false,
+      captureInfo: '',
+      localStream: null,
+    });
   }
 
   // ---- watching (auto-subscribe every share; no cap) ----
 
   watch(peerId: string) {
     const seq = this.sessionSeq;
-    const sharing = this.members.some(member => member.peerId === peerId && member.rt);
+    const sharing = this.members.some(
+      member => member.peerId === peerId && member.rt,
+    );
     if (!sharing && !this.hidden.has(peerId)) return;
     if (this.hidden.has(peerId)) {
       this.hidden.delete(peerId);
@@ -428,15 +503,26 @@ export class CloudflareMediaProvider implements MediaProvider {
   // ---- session lifecycle ----
 
   private readonly wakeReconnect = () => {
-    if (this.disposed || navigator.onLine === false || this.accessTerminal) return;
-    if (this.state.socketState === 'connected' || this.state.socketState === 'connecting') return;
+    if (this.disposed || navigator.onLine === false || this.accessTerminal)
+      return;
+    if (
+      this.state.socketState === 'connected' ||
+      this.state.socketState === 'connecting'
+    )
+      return;
     if (document.visibilityState === 'hidden') return;
     this.reconnectAttempts = 0;
     this.startSession();
   };
 
   private scheduleReconnect() {
-    if (this.disposed || this.reconnectTimer || navigator.onLine === false || this.accessTerminal) return;
+    if (
+      this.disposed ||
+      this.reconnectTimer ||
+      navigator.onLine === false ||
+      this.accessTerminal
+    )
+      return;
     const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 15_000);
     this.reconnectAttempts++;
     this.reconnectTimer = setTimeout(() => {
@@ -481,7 +567,8 @@ export class CloudflareMediaProvider implements MediaProvider {
         remoteStreams: [],
         watcherIds: [],
         connectionState: 'aguardando',
-        error: 'Você está offline. A conexão será retomada quando a internet voltar.',
+        error:
+          'Você está offline. A conexão será retomada quando a internet voltar.',
         joinError: '',
         accessError: '',
       });
@@ -511,7 +598,9 @@ export class CloudflareMediaProvider implements MediaProvider {
       this.roomAccessToken,
       this.clientId,
       message => {
-        wsQueue = wsQueue.then(() => this.receive(seq, message)).catch(() => {});
+        wsQueue = wsQueue
+          .then(() => this.receive(seq, message))
+          .catch(() => {});
       },
       socketState => this.onSocketState(seq, socketState),
     );
@@ -529,7 +618,13 @@ export class CloudflareMediaProvider implements MediaProvider {
     this.subscriptions.clear();
     this.subscribeRetries.clear();
     this.midToPeer.clear();
-    this.update({ selfId: '', selectedIds: [], members: [], remoteStreams: [], watcherIds: [] });
+    this.update({
+      selfId: '',
+      selectedIds: [],
+      members: [],
+      remoteStreams: [],
+      watcherIds: [],
+    });
     if (this.disposed || this.accessTerminal) return;
     this.setError(
       socketState === 'restarting'
@@ -550,7 +645,9 @@ export class CloudflareMediaProvider implements MediaProvider {
           roomName: message.roomName,
           credential: this.credential,
           ...(message.accessToken ? { accessToken: message.accessToken } : {}),
-          ...(message.accessTokenExpiresAt ? { accessTokenExpiresAt: message.accessTokenExpiresAt } : {}),
+          ...(message.accessTokenExpiresAt
+            ? { accessTokenExpiresAt: message.accessTokenExpiresAt }
+            : {}),
         });
         this.update({
           selfId: message.peerId,
@@ -574,7 +671,9 @@ export class CloudflareMediaProvider implements MediaProvider {
         this.reconcile(seq);
         break;
       case 'room-access-denied':
-        this.accessTerminal = message.reason === 'too-many-attempts' || message.reason === 'invalid-invite';
+        this.accessTerminal =
+          message.reason === 'too-many-attempts' ||
+          message.reason === 'invalid-invite';
         this.update({ accessError: message.reason });
         break;
       case 'room-state':
@@ -582,7 +681,11 @@ export class CloudflareMediaProvider implements MediaProvider {
         this.reconcile(seq);
         break;
       case 'error':
-        this.update(this.joined ? { error: message.message } : { joinError: message.message });
+        this.update(
+          this.joined
+            ? { error: message.message }
+            : { joinError: message.message },
+        );
         break;
       default:
         break;
@@ -596,7 +699,10 @@ export class CloudflareMediaProvider implements MediaProvider {
     // placeholder de transceiver e sem munge de SDP — o SFU é exigente com a answer.
     const pc = new RTCPeerConnection({
       bundlePolicy: 'max-bundle',
-      iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }, ...(rtcConfiguration.iceServers ?? [])],
+      iceServers: [
+        { urls: 'stun:stun.cloudflare.com:3478' },
+        ...(rtcConfiguration.iceServers ?? []),
+      ],
     });
     this.pc = pc;
     pc.ontrack = event => this.onTrack(seq, event);
@@ -661,7 +767,9 @@ export class CloudflareMediaProvider implements MediaProvider {
         error.reason === 'wrong-password' ||
         error.reason === 'too-many-attempts')
     ) {
-      this.accessTerminal = error.reason === 'invalid-invite' || error.reason === 'too-many-attempts';
+      this.accessTerminal =
+        error.reason === 'invalid-invite' ||
+        error.reason === 'too-many-attempts';
       this.update({ accessError: error.reason });
       return;
     }
@@ -672,7 +780,11 @@ export class CloudflareMediaProvider implements MediaProvider {
 
   private async resumeShare(seq: number) {
     const track = this.localStream?.getVideoTracks()[0];
-    if (!this.wantsToShare || !this.localStream || track?.readyState !== 'live') {
+    if (
+      !this.wantsToShare ||
+      !this.localStream ||
+      track?.readyState !== 'live'
+    ) {
       if (this.wantsToShare) this.teardownCapture();
       this.wantsToShare = false;
       return;
@@ -689,45 +801,81 @@ export class CloudflareMediaProvider implements MediaProvider {
 
   private reconcile(seq: number) {
     if (!this.isCurrent(seq) || !this.joined) return;
-    const sharers = this.members.filter(m => m.rt && m.peerId !== this.state.selfId);
+    const sharers = this.members.filter(
+      m => m.rt && m.peerId !== this.state.selfId,
+    );
     const visible = sharers.filter(m => !this.hidden.has(m.peerId));
 
     for (const peerId of Array.from(this.subscriptions.keys())) {
       const still = visible.find(m => m.peerId === peerId);
-      if (!still || this.subscriptions.get(peerId)!.publisherSessionId !== still.rt!.sessionId) {
+      if (
+        !still ||
+        this.subscriptions.get(peerId)!.publisherSessionId !==
+          still.rt!.sessionId
+      ) {
         this.unsubscribe(peerId);
       }
     }
     for (const member of visible) {
       if (!this.subscriptions.has(member.peerId)) {
-        void this.queue.run(() => this.subscribeTo(seq, member)).catch(error => this.handleTrackError(seq, error));
+        void this.queue
+          .run(() => this.subscribeTo(seq, member))
+          .catch(error => this.handleTrackError(seq, error));
       }
     }
 
     const previous = this.state.selectedIds;
     const selectedIds = visible.map(m => m.peerId);
-    const droppedWatched = previous.find(id => !sharers.some(m => m.peerId === id) && !this.hidden.has(id));
+    const droppedWatched = previous.find(
+      id => !sharers.some(m => m.peerId === id) && !this.hidden.has(id),
+    );
     this.update({
       selectedIds,
-      endedReason: droppedWatched && selectedIds.length === 0 ? 'remote' : this.state.endedReason,
-      endedPeerId: droppedWatched && selectedIds.length === 0 ? droppedWatched : this.state.endedPeerId,
+      endedReason:
+        droppedWatched && selectedIds.length === 0
+          ? 'remote'
+          : this.state.endedReason,
+      endedPeerId:
+        droppedWatched && selectedIds.length === 0
+          ? droppedWatched
+          : this.state.endedPeerId,
     });
     this.renderConnectionState();
   }
 
   private async subscribeTo(seq: number, member: Participant) {
     const pc = this.pc;
-    if (!this.isCurrent(seq) || !pc || !this.ticket || !member.rt || this.subscriptions.has(member.peerId)) return;
-    const tracks: TrackRequest[] = [{ location: 'remote', sessionId: member.rt.sessionId, trackName: member.rt.video }];
+    if (
+      !this.isCurrent(seq) ||
+      !pc ||
+      !this.ticket ||
+      !member.rt ||
+      this.subscriptions.has(member.peerId)
+    )
+      return;
+    const tracks: TrackRequest[] = [
+      {
+        location: 'remote',
+        sessionId: member.rt.sessionId,
+        trackName: member.rt.video,
+      },
+    ];
     if (member.rt.audio)
-      tracks.push({ location: 'remote', sessionId: member.rt.sessionId, trackName: member.rt.audio });
+      tracks.push({
+        location: 'remote',
+        sessionId: member.rt.sessionId,
+        trackName: member.rt.audio,
+      });
 
     const res = await realtimeTracksNew(this.ticket, { tracks });
     if (!this.isCurrent(seq)) return;
 
     // O publicador ainda não está enviando pacotes (corrida no anúncio); tenta de
     // novo daqui a pouco, até um limite.
-    if (!res.sessionDescription || (res.tracks ?? []).some(t => t.errorCode || !t.mid)) {
+    if (
+      !res.sessionDescription ||
+      (res.tracks ?? []).some(t => t.errorCode || !t.mid)
+    ) {
       const attempts = (this.subscribeRetries.get(member.peerId) ?? 0) + 1;
       this.subscribeRetries.set(member.peerId, attempts);
       if (attempts <= 8) setTimeout(() => this.reconcile(seq), 1200);
@@ -736,7 +884,11 @@ export class CloudflareMediaProvider implements MediaProvider {
     this.subscribeRetries.delete(member.peerId);
 
     const stream = new MediaStream();
-    const sub: Subscription = { videoMid: '', stream, publisherSessionId: member.rt.sessionId };
+    const sub: Subscription = {
+      videoMid: '',
+      stream,
+      publisherSessionId: member.rt.sessionId,
+    };
     const mids: string[] = [];
     for (const t of res.tracks ?? []) {
       if (!t.mid) continue;
@@ -753,7 +905,10 @@ export class CloudflareMediaProvider implements MediaProvider {
         await pc.setRemoteDescription(res.sessionDescription);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        await realtimeRenegotiate(this.ticket, { type: 'answer', sdp: pc.localDescription!.sdp });
+        await realtimeRenegotiate(this.ticket, {
+          type: 'answer',
+          sdp: pc.localDescription!.sdp,
+        });
       }
     } catch (error) {
       // Deixa o estado consistente para o próximo reconcile poder tentar de novo.
@@ -768,11 +923,16 @@ export class CloudflareMediaProvider implements MediaProvider {
     const sub = this.subscriptions.get(peerId);
     if (!sub) return;
     this.subscriptions.delete(peerId);
-    const mids = [sub.videoMid, ...(sub.audioMid ? [sub.audioMid] : [])].filter(Boolean);
+    const mids = [sub.videoMid, ...(sub.audioMid ? [sub.audioMid] : [])].filter(
+      Boolean,
+    );
     for (const mid of mids) this.midToPeer.delete(mid);
     sub.stream.getTracks().forEach(track => track.stop());
     const ticket = this.ticket;
-    if (ticket && mids.length) void this.queue.run(() => realtimeTracksClose(ticket, mids)).catch(() => {});
+    if (ticket && mids.length)
+      void this.queue
+        .run(() => realtimeTracksClose(ticket, mids))
+        .catch(() => {});
     this.rebuildRemoteStreams();
   }
 
@@ -783,7 +943,8 @@ export class CloudflareMediaProvider implements MediaProvider {
     if (!info) return;
     const sub = this.subscriptions.get(info.peerId);
     if (!sub) return;
-    if (!sub.stream.getTracks().includes(event.track)) sub.stream.addTrack(event.track);
+    if (!sub.stream.getTracks().includes(event.track))
+      sub.stream.addTrack(event.track);
     this.rebuildRemoteStreams();
   }
 
@@ -791,7 +952,11 @@ export class CloudflareMediaProvider implements MediaProvider {
     const remoteStreams: RemoteStream[] = [];
     for (const [peerId, sub] of this.subscriptions) {
       if (sub.stream.getVideoTracks().length) {
-        remoteStreams.push({ peerId, sessionId: sub.publisherSessionId, stream: sub.stream });
+        remoteStreams.push({
+          peerId,
+          sessionId: sub.publisherSessionId,
+          stream: sub.stream,
+        });
       }
     }
     this.update({ remoteStreams });
@@ -808,9 +973,13 @@ export class CloudflareMediaProvider implements MediaProvider {
         ? 'aguardando'
         : `${connected}/${selected} conectada${selected > 1 ? 's' : ''}`;
     const selfId = this.state.selfId;
-    const watcherIds = this.state.sharing ? this.members.filter(m => m.peerId !== selfId).map(m => m.peerId) : [];
-    for (const id of watcherIds) if (!this.knownWatcherIds.has(id)) playSound('viewer-join');
-    for (const id of this.knownWatcherIds) if (!watcherIds.includes(id)) playSound('viewer-leave');
+    const watcherIds = this.state.sharing
+      ? this.members.filter(m => m.peerId !== selfId).map(m => m.peerId)
+      : [];
+    for (const id of watcherIds)
+      if (!this.knownWatcherIds.has(id)) playSound('viewer-join');
+    for (const id of this.knownWatcherIds)
+      if (!watcherIds.includes(id)) playSound('viewer-leave');
     this.knownWatcherIds = new Set(watcherIds);
     this.update({ connectionState, watcherIds });
   }
@@ -823,15 +992,22 @@ export class CloudflareMediaProvider implements MediaProvider {
       for (const member of next) {
         const before = previous.find(p => p.peerId === member.peerId);
         if (!before && member.peerId !== selfId) playSound('connect');
-        if (before && !before.rt && member.rt && member.peerId !== selfId) playSound('share-start');
-        if (before && before.rt && !member.rt && member.peerId !== selfId) playSound('share-stop');
+        if (before && !before.rt && member.rt && member.peerId !== selfId)
+          playSound('share-start');
+        if (before && before.rt && !member.rt && member.peerId !== selfId)
+          playSound('share-stop');
       }
       for (const member of previous) {
-        if (member.peerId !== selfId && !next.some(p => p.peerId === member.peerId)) playSound('disconnect');
+        if (
+          member.peerId !== selfId &&
+          !next.some(p => p.peerId === member.peerId)
+        )
+          playSound('disconnect');
       }
     }
     this.membersSeeded = true;
-    for (const id of Array.from(this.hidden)) if (!next.some(m => m.peerId === id)) this.hidden.delete(id);
+    for (const id of Array.from(this.hidden))
+      if (!next.some(m => m.peerId === id)) this.hidden.delete(id);
     for (const id of Array.from(this.subscribeRetries.keys()))
       if (!next.some(m => m.peerId === id)) this.subscribeRetries.delete(id);
     this.members = next;

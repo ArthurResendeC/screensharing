@@ -11,10 +11,15 @@ export let START_VIDEO_BITRATE: number | undefined = 8_000_000;
 // What the encoder sacrifices under CPU/bandwidth pressure. 'framerate' keeps FPS and
 // bitrate steady and lets resolution scale down; 'resolution' does the opposite.
 export type VideoDegradation = 'framerate' | 'balanced' | 'resolution';
-export let VIDEO_DEGRADATION_PREFERENCE: RTCDegradationPreference = 'maintain-framerate';
+export let VIDEO_DEGRADATION_PREFERENCE: RTCDegradationPreference =
+  'maintain-framerate';
 export function setVideoDegradation(value: VideoDegradation) {
   VIDEO_DEGRADATION_PREFERENCE =
-    value === 'resolution' ? 'maintain-resolution' : value === 'balanced' ? 'balanced' : 'maintain-framerate';
+    value === 'resolution'
+      ? 'maintain-resolution'
+      : value === 'balanced'
+        ? 'balanced'
+        : 'maintain-framerate';
 }
 
 export type PublicRtcConfiguration = {
@@ -33,5 +38,8 @@ export function configureRtc(config: PublicRtcConfiguration) {
   MAX_VIDEO_BITRATE = positiveOrUndefined(config.maxVideoBitrate);
   MIN_VIDEO_BITRATE = positiveOrUndefined(config.minVideoBitrate);
   START_VIDEO_BITRATE = positiveOrUndefined(config.startVideoBitrate);
-  rtcConfiguration.iceServers = [{ urls: 'stun:stun.l.google.com:19302' }, ...(config.turn?.urls ? [config.turn] : [])];
+  rtcConfiguration.iceServers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    ...(config.turn?.urls ? [config.turn] : []),
+  ];
 }

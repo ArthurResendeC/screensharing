@@ -12,7 +12,12 @@ export function createMediaProvider(
   accessToken?: string,
 ): MediaProvider {
   if (getMediaConfig().mediaProvider === 'cloudflare') {
-    return new CloudflareMediaProvider(roomId, credential, password, accessToken);
+    return new CloudflareMediaProvider(
+      roomId,
+      credential,
+      password,
+      accessToken,
+    );
   }
   return new ScreenShareController(roomId, credential, password, accessToken);
 }

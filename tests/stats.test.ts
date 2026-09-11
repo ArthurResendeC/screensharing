@@ -1,9 +1,22 @@
 import { expect, test } from 'bun:test';
 import { collectStats, type Sample } from '../src/lib/webrtc/stats';
 
-const report = (timestamp: number, bytesSent: number, packetsSent: number, packetsLost: number) =>
+const report = (
+  timestamp: number,
+  bytesSent: number,
+  packetsSent: number,
+  packetsLost: number,
+) =>
   new Map<string, RTCStats>([
-    ['transport', { id: 'transport', type: 'transport', timestamp, selectedCandidatePairId: 'pair' } as RTCStats],
+    [
+      'transport',
+      {
+        id: 'transport',
+        type: 'transport',
+        timestamp,
+        selectedCandidatePairId: 'pair',
+      } as RTCStats,
+    ],
     [
       'pair',
       {
@@ -53,7 +66,15 @@ const report = (timestamp: number, bytesSent: number, packetsSent: number, packe
         framesPerSecond: 60,
       } as RTCStats,
     ],
-    ['codec', { id: 'codec', type: 'codec', timestamp, mimeType: 'video/VP9' } as RTCStats],
+    [
+      'codec',
+      {
+        id: 'codec',
+        type: 'codec',
+        timestamp,
+        mimeType: 'video/VP9',
+      } as RTCStats,
+    ],
     [
       'outbound',
       {

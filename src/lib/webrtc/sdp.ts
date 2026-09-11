@@ -1,4 +1,8 @@
-import { MAX_VIDEO_BITRATE, MIN_VIDEO_BITRATE, START_VIDEO_BITRATE } from './rtcConfiguration';
+import {
+  MAX_VIDEO_BITRATE,
+  MIN_VIDEO_BITRATE,
+  START_VIDEO_BITRATE,
+} from './rtcConfiguration';
 
 const kbps = (bps: number) => Math.max(1, Math.round(bps / 1000));
 
@@ -7,9 +11,12 @@ const kbps = (bps: number) => Math.max(1, Math.round(bps / 1000));
 // read x-google-*-bitrate from the video fmtp lines; other browsers ignore them.
 export function tuneVideoBitrate(sdp: string): string {
   const extras: string[] = [];
-  if (MIN_VIDEO_BITRATE) extras.push(`x-google-min-bitrate=${kbps(MIN_VIDEO_BITRATE)}`);
-  if (START_VIDEO_BITRATE) extras.push(`x-google-start-bitrate=${kbps(START_VIDEO_BITRATE)}`);
-  if (MAX_VIDEO_BITRATE) extras.push(`x-google-max-bitrate=${kbps(MAX_VIDEO_BITRATE)}`);
+  if (MIN_VIDEO_BITRATE)
+    extras.push(`x-google-min-bitrate=${kbps(MIN_VIDEO_BITRATE)}`);
+  if (START_VIDEO_BITRATE)
+    extras.push(`x-google-start-bitrate=${kbps(START_VIDEO_BITRATE)}`);
+  if (MAX_VIDEO_BITRATE)
+    extras.push(`x-google-max-bitrate=${kbps(MAX_VIDEO_BITRATE)}`);
   if (!extras.length) return sdp;
   const suffix = extras.join(';');
   const eol = sdp.includes('\r\n') ? '\r\n' : '\n';

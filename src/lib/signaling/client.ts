@@ -1,4 +1,8 @@
-import { serverMessageSchema, type ClientMessage, type ServerMessage } from './messages';
+import {
+  serverMessageSchema,
+  type ClientMessage,
+  type ServerMessage,
+} from './messages';
 
 // App-level heartbeat: a backgrounded or half-open socket can stay "open" for minutes
 // after the server is gone. Ping regularly and treat a missing reply as a disconnect.
@@ -18,7 +22,8 @@ export function connectSignaling(
   url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const socket = new WebSocket(url);
   const send = (message: ClientMessage) => {
-    if (socket.readyState !== WebSocket.OPEN) throw new Error('Signaling desconectado.');
+    if (socket.readyState !== WebSocket.OPEN)
+      throw new Error('Signaling desconectado.');
     socket.send(JSON.stringify(message));
   };
 
@@ -73,7 +78,11 @@ export function connectSignaling(
   socket.onerror = () => onState('error');
   socket.onclose = event => {
     stopHeartbeat();
-    onState(event.code === 1012 || event.code === 1001 ? 'restarting' : 'disconnected');
+    onState(
+      event.code === 1012 || event.code === 1001
+        ? 'restarting'
+        : 'disconnected',
+    );
   };
   return {
     send,
@@ -89,31 +98,45 @@ export function connectSignaling(
 }
 
 export function createRoom(name: string, password?: string) {
-  return new Promise<Extract<ServerMessage, { type: 'room-created' }>>((resolve, reject) => {
-    const url = new URL('/signaling', location.href);
-    url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(url);
-    const finish = (error?: Error, room?: Extract<ServerMessage, { type: 'room-created' }>) => {
-      socket.onopen = null;
-      socket.onmessage = null;
-      socket.onerror = null;
-      socket.onclose = null;
-      socket.close();
-      if (error) reject(error);
-      else if (room) resolve(room);
-    };
-    socket.onopen = () => socket.send(JSON.stringify({ type: 'create-room', name, ...(password ? { password } : {}) }));
-    socket.onmessage = event => {
-      try {
-        if (typeof event.data !== 'string') throw new Error();
-        const message = serverMessageSchema.parse(JSON.parse(event.data));
-        if (message.type === 'room-created') finish(undefined, message);
-        else if (message.type === 'error') finish(new Error(message.message));
-      } catch {
-        finish(new Error('O servidor retornou uma resposta inválida.'));
-      }
-    };
-    socket.onerror = () => finish(new Error('Não foi possível conectar ao servidor.'));
-    socket.onclose = () => finish(new Error('A conexão foi encerrada antes da criação da sala.'));
-  });
+  return new Promise<Extract<ServerMessage, { type: 'room-created' }>>(
+    (resolve, reject) => {
+      const url = new URL('/signaling', location.href);
+      url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const socket = new WebSocket(url);
+      const finish = (
+        error?: Error,
+        room?: Extract<ServerMessage, { type: 'room-created' }>,
+      ) => {
+        socket.onopen = null;
+        socket.onmessage = null;
+        socket.onerror = null;
+        socket.onclose = null;
+        socket.close();
+        if (error) reject(error);
+        else if (room) resolve(room);
+      };
+      socket.onopen = () =>
+        socket.send(
+          JSON.stringify({
+            type: 'create-room',
+            name,
+            ...(password ? { password } : {}),
+          }),
+        );
+      socket.onmessage = event => {
+        try {
+          if (typeof event.data !== 'string') throw new Error();
+          const message = serverMessageSchema.parse(JSON.parse(event.data));
+          if (message.type === 'room-created') finish(undefined, message);
+          else if (message.type === 'error') finish(new Error(message.message));
+        } catch {
+          finish(new Error('O servidor retornou uma resposta inválida.'));
+        }
+      };
+      socket.onerror = () =>
+        finish(new Error('Não foi possível conectar ao servidor.'));
+      socket.onclose = () =>
+        finish(new Error('A conexão foi encerrada antes da criação da sala.'));
+    },
+  );
 }

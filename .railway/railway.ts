@@ -3,8 +3,13 @@ import { defineRailway, project, service } from 'railway/iac';
 export default defineRailway(ctx => {
   // Some CLI versions evaluate once without context before loading the linked project.
   // When context is present, refuse to manage an unrelated project.
-  if (ctx.projectId && ctx.projectId !== 'a2f56a74-1b60-4657-aa06-6b49373fee84') {
-    throw new Error('Vincule o projeto screensharing antes de aplicar esta configuração.');
+  if (
+    ctx.projectId &&
+    ctx.projectId !== 'a2f56a74-1b60-4657-aa06-6b49373fee84'
+  ) {
+    throw new Error(
+      'Vincule o projeto screensharing antes de aplicar esta configuração.',
+    );
   }
 
   // No GitHub source: deployments are explicit via `railway up --service ...`.

@@ -1,5 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { CloseIcon, FullscreenIcon, PipIcon, VolumeIcon, VolumeMutedIcon, ZoomInIcon, ZoomOutIcon } from './icons';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
+import {
+  CloseIcon,
+  FullscreenIcon,
+  PipIcon,
+  VolumeIcon,
+  VolumeMutedIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
+} from './icons';
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 3;
@@ -12,15 +26,31 @@ type Props = { stream: MediaStream | null; label: string } & (
 );
 
 type PictureInPictureMediaSession = {
-  setActionHandler(action: 'enterpictureinpicture', handler: (() => void) | null): void;
+  setActionHandler(
+    action: 'enterpictureinpicture',
+    handler: (() => void) | null,
+  ): void;
 };
 
-export function MediaVideo({ stream, local = false, label, onStopWatching }: Props) {
+export function MediaVideo({
+  stream,
+  local = false,
+  label,
+  onStopWatching,
+}: Props) {
   const player = useRef<HTMLDivElement>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
-  const controlsTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const drag = useRef<{ pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null>(null);
+  const controlsTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const drag = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
   const [blocked, setBlocked] = useState(false);
   const [muted, setMuted] = useState(local);
   const [pipActive, setPipActive] = useState(false);
@@ -39,7 +69,8 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
     setControlsVisible(true);
     controlsTimer.current = setTimeout(() => {
       controlsTimer.current = undefined;
-      if (!player.current?.contains(document.activeElement)) setControlsVisible(false);
+      if (!player.current?.contains(document.activeElement))
+        setControlsVisible(false);
     }, CONTROLS_IDLE_MS);
   }, [local, stream]);
 
@@ -65,7 +96,8 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
     const container = player.current;
     if (element && document.pictureInPictureElement === element)
       void document.exitPictureInPicture().catch(() => undefined);
-    if (container && document.fullscreenElement === container) void document.exitFullscreen().catch(() => undefined);
+    if (container && document.fullscreenElement === container)
+      void document.exitFullscreen().catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -93,10 +125,17 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
     const syncMuted = () => setMuted(element.muted);
     const enterPip = () => setPipActive(true);
     const leavePip = () => setPipActive(false);
-    const syncFullscreen = () => setFullscreenActive(document.fullscreenElement === container);
+    const syncFullscreen = () =>
+      setFullscreenActive(document.fullscreenElement === container);
 
-    setPipSupported(!local && document.pictureInPictureEnabled && 'requestPictureInPicture' in element);
-    setFullscreenSupported(!local && document.fullscreenEnabled && 'requestFullscreen' in container);
+    setPipSupported(
+      !local &&
+        document.pictureInPictureEnabled &&
+        'requestPictureInPicture' in element,
+    );
+    setFullscreenSupported(
+      !local && document.fullscreenEnabled && 'requestFullscreen' in container,
+    );
     element.addEventListener('volumechange', syncMuted);
     element.addEventListener('enterpictureinpicture', enterPip);
     element.addEventListener('leavepictureinpicture', leavePip);
@@ -111,8 +150,10 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
   }, [leavePresentationModes, local]);
 
   useEffect(() => {
-    if (local || !stream || !pipSupported || !('mediaSession' in navigator)) return;
-    const mediaSession = navigator.mediaSession as unknown as PictureInPictureMediaSession;
+    if (local || !stream || !pipSupported || !('mediaSession' in navigator))
+      return;
+    const mediaSession =
+      navigator.mediaSession as unknown as PictureInPictureMediaSession;
     try {
       mediaSession.setActionHandler('enterpictureinpicture', () => {
         const element = video.current;
@@ -151,7 +192,9 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
   const changeZoom = (change: number) => {
     setZoom(current => {
       const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, current + change));
-      setOffset(currentOffset => constrainOffset(currentOffset.x, currentOffset.y, next));
+      setOffset(currentOffset =>
+        constrainOffset(currentOffset.x, currentOffset.y, next),
+      );
       return next;
     });
   };
@@ -178,7 +221,11 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
     const current = drag.current;
     if (!current || current.pointerId !== event.pointerId) return;
     setOffset(
-      constrainOffset(current.offsetX + event.clientX - current.x, current.offsetY + event.clientY - current.y, zoom),
+      constrainOffset(
+        current.offsetX + event.clientX - current.x,
+        current.offsetY + event.clientY - current.y,
+        zoom,
+      ),
     );
   };
 
@@ -195,7 +242,8 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
     if (!element) return;
     setControlError('');
     try {
-      if (document.pictureInPictureElement === element) await document.exitPictureInPicture();
+      if (document.pictureInPictureElement === element)
+        await document.exitPictureInPicture();
       else {
         if (document.fullscreenElement) await document.exitFullscreen();
         await element.requestPictureInPicture();
@@ -211,9 +259,11 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
     if (!element || !container) return;
     setControlError('');
     try {
-      if (document.fullscreenElement === container) await document.exitFullscreen();
+      if (document.fullscreenElement === container)
+        await document.exitFullscreen();
       else {
-        if (document.pictureInPictureElement === element) await document.exitPictureInPicture();
+        if (document.pictureInPictureElement === element)
+          await document.exitPictureInPicture();
         await container.requestFullscreen();
       }
     } catch {
@@ -253,21 +303,35 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
           playsInline
           muted={muted}
           aria-label={label}
-          style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }}
+          style={{
+            transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+          }}
         />
       </div>
       {blocked && (
-        <button type="button" className="btn btn-outline media-playback-unlock" onClick={() => void play()}>
+        <button
+          type="button"
+          className="btn btn-outline media-playback-unlock"
+          onClick={() => void play()}
+        >
           {local ? 'Reproduzir preview' : 'Reproduzir vídeo e áudio'}
         </button>
       )}
       {!local && stream && (
         <div className="media-controls" data-media-controls>
-          <button type="button" className="media-control media-control-leave" onClick={stopWatching}>
+          <button
+            type="button"
+            className="media-control media-control-leave"
+            onClick={stopWatching}
+          >
             <CloseIcon /> <span>Deixar de assistir</span>
           </button>
           <div className="media-control-group">
-            <div className="media-zoom-controls" role="group" aria-label="Zoom do vídeo">
+            <div
+              className="media-zoom-controls"
+              role="group"
+              aria-label="Zoom do vídeo"
+            >
               <button
                 type="button"
                 className="media-control media-control-icon"
@@ -313,8 +377,16 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
               <button
                 type="button"
                 className={`media-control media-control-icon${pipActive ? ' is-active' : ''}`}
-                title={pipActive ? 'Sair do picture-in-picture' : 'Abrir picture-in-picture'}
-                aria-label={pipActive ? 'Sair do picture-in-picture' : 'Abrir picture-in-picture'}
+                title={
+                  pipActive
+                    ? 'Sair do picture-in-picture'
+                    : 'Abrir picture-in-picture'
+                }
+                aria-label={
+                  pipActive
+                    ? 'Sair do picture-in-picture'
+                    : 'Abrir picture-in-picture'
+                }
                 aria-pressed={pipActive}
                 onClick={() => void togglePip()}
               >
@@ -325,8 +397,16 @@ export function MediaVideo({ stream, local = false, label, onStopWatching }: Pro
               <button
                 type="button"
                 className={`media-control media-control-icon${fullscreenActive ? ' is-active' : ''}`}
-                title={fullscreenActive ? 'Sair da tela cheia' : 'Abrir em tela cheia'}
-                aria-label={fullscreenActive ? 'Sair da tela cheia' : 'Abrir em tela cheia'}
+                title={
+                  fullscreenActive
+                    ? 'Sair da tela cheia'
+                    : 'Abrir em tela cheia'
+                }
+                aria-label={
+                  fullscreenActive
+                    ? 'Sair da tela cheia'
+                    : 'Abrir em tela cheia'
+                }
                 aria-pressed={fullscreenActive}
                 onClick={() => void toggleFullscreen()}
               >

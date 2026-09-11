@@ -1,15 +1,28 @@
 import { expect, test } from '@playwright/test';
 
-test('exposes the manifest and required installation assets', async ({ page, request }) => {
+test('exposes the manifest and required installation assets', async ({
+  page,
+  request,
+}) => {
   await page.goto('/');
-  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', /manifest/);
-  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#16181b');
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
+    'href',
+    /manifest/,
+  );
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute(
+    'content',
+    '#16181b',
+  );
 
-  const manifestHref = await page.locator('link[rel="manifest"]').getAttribute('href');
+  const manifestHref = await page
+    .locator('link[rel="manifest"]')
+    .getAttribute('href');
   expect(manifestHref).not.toBeNull();
   const manifestResponse = await request.get(manifestHref!);
   expect(manifestResponse.ok()).toBe(true);
-  expect(manifestResponse.headers()['content-type']).toContain('application/manifest+json');
+  expect(manifestResponse.headers()['content-type']).toContain(
+    'application/manifest+json',
+  );
   const manifest = (await manifestResponse.json()) as {
     name: string;
     start_url: string;
@@ -17,12 +30,29 @@ test('exposes the manifest and required installation assets', async ({ page, req
     display: string;
     icons: { src: string; sizes: string; purpose: string }[];
   };
-  expect(manifest).toMatchObject({ name: 'ReShare', start_url: '/', scope: '/', display: 'standalone' });
+  expect(manifest).toMatchObject({
+    name: 'ReShare',
+    start_url: '/',
+    scope: '/',
+    display: 'standalone',
+  });
   expect(manifest.icons).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ src: '/icons/icon-192.png', sizes: '192x192', purpose: 'any' }),
-      expect.objectContaining({ src: '/icons/icon-512.png', sizes: '512x512', purpose: 'any' }),
-      expect.objectContaining({ src: '/icons/icon-maskable-512.png', sizes: '512x512', purpose: 'maskable' }),
+      expect.objectContaining({
+        src: '/icons/icon-192.png',
+        sizes: '192x192',
+        purpose: 'any',
+      }),
+      expect.objectContaining({
+        src: '/icons/icon-512.png',
+        sizes: '512x512',
+        purpose: 'any',
+      }),
+      expect.objectContaining({
+        src: '/icons/icon-maskable-512.png',
+        sizes: '512x512',
+        purpose: 'maskable',
+      }),
     ]),
   );
 
@@ -38,10 +68,17 @@ test('exposes the manifest and required installation assets', async ({ page, req
   }
 });
 
-test('opens a room shell offline and reconnects when the network returns', async ({ page, context }) => {
+test('opens a room shell offline and reconnects when the network returns', async ({
+  page,
+  context,
+}) => {
   await page.goto('/');
   await page.evaluate(() => navigator.serviceWorker.ready);
-  await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(() => navigator.serviceWorker.controller !== null),
+    )
+    .toBe(true);
   await page.reload();
 
   const cachedPaths = await page.evaluate(async () => {
@@ -54,7 +91,9 @@ test('opens a room shell offline and reconnects when the network returns', async
   expect(cachedPaths).not.toContain('/config.json');
 
   await page.getByLabel('Nome da sala').fill('Sala offline');
-  await page.getByLabel('Senha (opcional)', { exact: true }).fill('password-for-e2e');
+  await page
+    .getByLabel('Senha (opcional)', { exact: true })
+    .fill('password-for-e2e');
   await page.getByRole('button', { name: 'Criar sala' }).click();
   await expect(page).toHaveURL(/\/room\//);
   const roomUrl = page.url();
@@ -64,7 +103,9 @@ test('opens a room shell offline and reconnects when the network returns', async
   await expect(page.getByRole('status')).toContainText('Você está offline');
   await page.getByLabel('Senha da sala').fill('password-for-e2e');
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
-  await expect(page.getByText('Sala de transmissão', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Sala de transmissão', { exact: true }),
+  ).toBeVisible();
 
   await context.setOffline(false);
   await expect(page.getByRole('status')).toHaveCount(0);
@@ -73,7 +114,9 @@ test('opens a room shell offline and reconnects when the network returns', async
   await page.goto('/');
   await page.evaluate(async () => {
     await Promise.all(
-      (await navigator.serviceWorker.getRegistrations()).map(registration => registration.unregister()),
+      (await navigator.serviceWorker.getRegistrations()).map(registration =>
+        registration.unregister(),
+      ),
     );
     await Promise.all((await caches.keys()).map(name => caches.delete(name)));
   });

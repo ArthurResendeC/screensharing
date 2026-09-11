@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test';
-import { isVideoCodecSupported, preferVideoCodec, setVideoCodecPreference } from '../src/lib/webrtc/codecs';
+import {
+  isVideoCodecSupported,
+  preferVideoCodec,
+  setVideoCodecPreference,
+} from '../src/lib/webrtc/codecs';
 
 const codec = (mimeType: string, sdpFmtpLine?: string): RTCRtpCodec => ({
   mimeType,

@@ -46,7 +46,8 @@ class FakeConnection {
 }
 test('two receivers, reciprocal sessions, early ICE, stale signaling and independent cleanup', async () => {
   const original = globalThis.RTCPeerConnection;
-  globalThis.RTCPeerConnection = FakeConnection as unknown as typeof RTCPeerConnection;
+  globalThis.RTCPeerConnection =
+    FakeConnection as unknown as typeof RTCPeerConnection;
   try {
     const sent: ClientMessage[] = [];
     const peers = new Peers(
@@ -60,21 +61,39 @@ test('two receivers, reciprocal sessions, early ICE, stale signaling and indepen
     const peerId = crypto.randomUUID(),
       sessionId = crypto.randomUUID();
     const candidate = { candidate: 'candidate:test', sdpMid: '0' };
-    const offer = { type: 'offer' as const, peerId, sessionId, sdp: { type: 'offer' as const, sdp: 'offer' } };
+    const offer = {
+      type: 'offer' as const,
+      peerId,
+      sessionId,
+      sdp: { type: 'offer' as const, sdp: 'offer' },
+    };
     await peers.receive(offer); // No unsolicited connection creation.
     expect(peers.peers.size).toBe(0);
     peers.select(peerId, sessionId);
-    await peers.receive({ type: 'ice-candidate', peerId, sessionId, candidate });
-    const receiver = peers.peers.get(sessionId)!.pc as unknown as FakeConnection;
+    await peers.receive({
+      type: 'ice-candidate',
+      peerId,
+      sessionId,
+      candidate,
+    });
+    const receiver = peers.peers.get(sessionId)!
+      .pc as unknown as FakeConnection;
     expect(receiver.added.length).toBe(0);
     await peers.receive(offer);
     expect(receiver.added.length).toBe(1);
     expect(sent[0].type).toBe('answer');
     const sendingId = crypto.randomUUID();
-    await peers.offer(peerId, sendingId, { getTracks: () => [] } as unknown as MediaStream);
+    await peers.offer(peerId, sendingId, {
+      getTracks: () => [],
+    } as unknown as MediaStream);
     const sender = peers.peers.get(sendingId)!.pc as unknown as FakeConnection;
     expect(peers.peers.size).toBe(2); // Same participant, separate directions.
-    await peers.receive({ type: 'ice-candidate', peerId, sessionId: sendingId, candidate });
+    await peers.receive({
+      type: 'ice-candidate',
+      peerId,
+      sessionId: sendingId,
+      candidate,
+    });
     expect(sender.added.length).toBe(0);
     await peers.receive({
       type: 'answer',
@@ -83,13 +102,21 @@ test('two receivers, reciprocal sessions, early ICE, stale signaling and indepen
       sdp: { type: 'answer', sdp: 'stale' },
     });
     expect(sender.remoteDescription).toBeNull();
-    await peers.receive({ type: 'answer', peerId, sessionId: sendingId, sdp: { type: 'answer', sdp: 'answer' } });
+    await peers.receive({
+      type: 'answer',
+      peerId,
+      sessionId: sendingId,
+      sdp: { type: 'answer', sdp: 'answer' },
+    });
     expect(sender.added.length).toBe(1);
     const nextId = crypto.randomUUID();
     peers.select(crypto.randomUUID(), nextId);
     expect(receiver.closed).toBeFalse();
     expect(sender.closed).toBeFalse();
-    expect([...peers.peers.values()].filter(entry => entry.direction === 'receive').length).toBe(2);
+    expect(
+      [...peers.peers.values()].filter(entry => entry.direction === 'receive')
+        .length,
+    ).toBe(2);
     peers.removeSession(sessionId);
     expect(receiver.closed).toBeTrue();
     await peers.receive(offer);
@@ -115,7 +142,8 @@ test('removed selection while remote SDP is pending cannot emit an old answer', 
       this.remoteDescription = sdp;
     }
   }
-  globalThis.RTCPeerConnection = DelayedConnection as unknown as typeof RTCPeerConnection;
+  globalThis.RTCPeerConnection =
+    DelayedConnection as unknown as typeof RTCPeerConnection;
   try {
     const sent: ClientMessage[] = [];
     const peers = new Peers(
@@ -129,7 +157,12 @@ test('removed selection while remote SDP is pending cannot emit an old answer', 
     const peerId = crypto.randomUUID(),
       sessionId = crypto.randomUUID();
     peers.select(peerId, sessionId);
-    const receiving = peers.receive({ type: 'offer', peerId, sessionId, sdp: { type: 'offer', sdp: 'offer' } });
+    const receiving = peers.receive({
+      type: 'offer',
+      peerId,
+      sessionId,
+      sdp: { type: 'offer', sdp: 'offer' },
+    });
     peers.removeSession(sessionId);
     resolveDescription();
     await receiving;
@@ -163,7 +196,8 @@ test('sets the preferred video codec before creating an offer', async () => {
       return super.createOffer();
     }
   }
-  globalThis.RTCPeerConnection = CodecConnection as unknown as typeof RTCPeerConnection;
+  globalThis.RTCPeerConnection =
+    CodecConnection as unknown as typeof RTCPeerConnection;
   globalThis.RTCRtpSender = {
     getCapabilities: () => ({
       codecs: [

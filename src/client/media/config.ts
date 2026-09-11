@@ -12,9 +12,12 @@ let current: MediaConfig = { mediaProvider: 'webrtc' };
 
 export function configureMedia(config: MediaConfig) {
   current = {
-    mediaProvider: config.mediaProvider === 'cloudflare' ? 'cloudflare' : 'webrtc',
+    mediaProvider:
+      config.mediaProvider === 'cloudflare' ? 'cloudflare' : 'webrtc',
     maxVideoBitrate:
-      typeof config.maxVideoBitrate === 'number' && config.maxVideoBitrate > 0 ? config.maxVideoBitrate : undefined,
+      typeof config.maxVideoBitrate === 'number' && config.maxVideoBitrate > 0
+        ? config.maxVideoBitrate
+        : undefined,
   };
 }
 

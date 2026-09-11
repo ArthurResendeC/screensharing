@@ -42,8 +42,17 @@ type NetworkStats = {
   bytesReceived?: number;
 };
 
-type CaptureStats = { width?: number; height?: number; fps?: number; frames?: number };
-export type PeerStats = { video: VideoStats[]; network?: NetworkStats; capture?: CaptureStats };
+type CaptureStats = {
+  width?: number;
+  height?: number;
+  fps?: number;
+  frames?: number;
+};
+export type PeerStats = {
+  video: VideoStats[];
+  network?: NetworkStats;
+  capture?: CaptureStats;
+};
 
 export type Sample = {
   bytes: number;
@@ -115,20 +124,29 @@ type ExtendedStat = RTCStats & {
 
 const finite = (value: unknown): number | undefined =>
   typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-const milliseconds = (seconds: number | undefined) => (seconds === undefined ? undefined : seconds * 1000);
+const milliseconds = (seconds: number | undefined) =>
+  seconds === undefined ? undefined : seconds * 1000;
 
 function selectedPair(report: RTCStatsReport): ExtendedStat | undefined {
   let transport: ExtendedStat | undefined;
   let fallback: ExtendedStat | undefined;
   report.forEach(raw => {
     const stat = raw as ExtendedStat;
-    if (stat.type === 'transport' && stat.selectedCandidatePairId) transport = stat;
-    if (stat.type === 'candidate-pair' && stat.state === 'succeeded' && (stat.selected || stat.nominated) && !fallback)
+    if (stat.type === 'transport' && stat.selectedCandidatePairId)
+      transport = stat;
+    if (
+      stat.type === 'candidate-pair' &&
+      stat.state === 'succeeded' &&
+      (stat.selected || stat.nominated) &&
+      !fallback
+    )
       fallback = stat;
   });
   return (
     (transport?.selectedCandidatePairId
-      ? (report.get(transport.selectedCandidatePairId) as ExtendedStat | undefined)
+      ? (report.get(transport.selectedCandidatePairId) as
+          | ExtendedStat
+          | undefined)
       : undefined) ?? fallback
   );
 }
@@ -139,13 +157,20 @@ function candidateAddress(candidate: ExtendedStat | undefined) {
   return address && candidate.port ? `${address}:${candidate.port}` : address;
 }
 
-export async function collectStats(pc: RTCPeerConnection, previous: Map<string, Sample>): Promise<PeerStats> {
+export async function collectStats(
+  pc: RTCPeerConnection,
+  previous: Map<string, Sample>,
+): Promise<PeerStats> {
   const report = await pc.getStats();
   const video: VideoStats[] = [];
   let capture: CaptureStats | undefined;
   const pair = selectedPair(report);
-  const local = pair?.localCandidateId ? (report.get(pair.localCandidateId) as ExtendedStat | undefined) : undefined;
-  const remote = pair?.remoteCandidateId ? (report.get(pair.remoteCandidateId) as ExtendedStat | undefined) : undefined;
+  const local = pair?.localCandidateId
+    ? (report.get(pair.localCandidateId) as ExtendedStat | undefined)
+    : undefined;
+  const remote = pair?.remoteCandidateId
+    ? (report.get(pair.remoteCandidateId) as ExtendedStat | undefined)
+    : undefined;
   const network: NetworkStats | undefined = pair
     ? {
         protocol: pair.protocol ?? local?.protocol,
@@ -175,42 +200,85 @@ export async function collectStats(pc: RTCPeerConnection, previous: Map<string, 
       };
       return;
     }
-    if (!['inbound-rtp', 'outbound-rtp'].includes(stat.type) || kind !== 'video') return;
+    if (
+      !['inbound-rtp', 'outbound-rtp'].includes(stat.type) ||
+      kind !== 'video'
+    )
+      return;
 
     const outbound = stat.type === 'outbound-rtp';
-    let remoteRtp = stat.remoteId ? (report.get(stat.remoteId) as ExtendedStat | undefined) : undefined;
+    let remoteRtp = stat.remoteId
+      ? (report.get(stat.remoteId) as ExtendedStat | undefined)
+      : undefined;
     if (outbound && !remoteRtp)
       report.forEach(candidate => {
         const related = candidate as ExtendedStat;
-        if (related.type === 'remote-inbound-rtp' && related.localId === stat.id) remoteRtp = related;
+        if (
+          related.type === 'remote-inbound-rtp' &&
+          related.localId === stat.id
+        )
+          remoteRtp = related;
       });
     const bytes = stat.bytesSent ?? stat.bytesReceived ?? 0;
     const packets = stat.packetsSent ?? stat.packetsReceived;
     const packetsLost = outbound ? remoteRtp?.packetsLost : stat.packetsLost;
-    const frames = outbound ? (stat.framesEncoded ?? stat.framesSent) : (stat.framesDecoded ?? stat.framesReceived);
-    const totalProcessingTime = outbound ? stat.totalEncodeTime : stat.totalDecodeTime;
+    const frames = outbound
+      ? (stat.framesEncoded ?? stat.framesSent)
+      : (stat.framesDecoded ?? stat.framesReceived);
+    const totalProcessingTime = outbound
+      ? stat.totalEncodeTime
+      : stat.totalDecodeTime;
     const last = previous.get(stat.id);
-    const elapsed = last && stat.timestamp > last.timestamp ? stat.timestamp - last.timestamp : undefined;
-    const bitrate = last && elapsed && bytes >= last.bytes ? ((bytes - last.bytes) * 8000) / elapsed : undefined;
-    const packetDelta = last?.packets === undefined || packets === undefined ? undefined : packets - last.packets;
-    const lostDelta =
-      last?.packetsLost === undefined || packetsLost === undefined ? undefined : packetsLost - last.packetsLost;
-    const packetLossPercent =
-      packetDelta !== undefined && lostDelta !== undefined && packetDelta + lostDelta > 0
-        ? (Math.max(0, lostDelta) * 100) / (packetDelta + Math.max(0, lostDelta))
+    const elapsed =
+      last && stat.timestamp > last.timestamp
+        ? stat.timestamp - last.timestamp
         : undefined;
-    const frameDelta = last?.frames === undefined || frames === undefined ? undefined : frames - last.frames;
+    const bitrate =
+      last && elapsed && bytes >= last.bytes
+        ? ((bytes - last.bytes) * 8000) / elapsed
+        : undefined;
+    const packetDelta =
+      last?.packets === undefined || packets === undefined
+        ? undefined
+        : packets - last.packets;
+    const lostDelta =
+      last?.packetsLost === undefined || packetsLost === undefined
+        ? undefined
+        : packetsLost - last.packetsLost;
+    const packetLossPercent =
+      packetDelta !== undefined &&
+      lostDelta !== undefined &&
+      packetDelta + lostDelta > 0
+        ? (Math.max(0, lostDelta) * 100) /
+          (packetDelta + Math.max(0, lostDelta))
+        : undefined;
+    const frameDelta =
+      last?.frames === undefined || frames === undefined
+        ? undefined
+        : frames - last.frames;
     const processingDelta =
-      last?.totalProcessingTime === undefined || totalProcessingTime === undefined
+      last?.totalProcessingTime === undefined ||
+      totalProcessingTime === undefined
         ? undefined
         : totalProcessingTime - last.totalProcessingTime;
     const frameProcessingMs =
-      frameDelta !== undefined && frameDelta > 0 && processingDelta !== undefined
+      frameDelta !== undefined &&
+      frameDelta > 0 &&
+      processingDelta !== undefined
         ? (processingDelta * 1000) / frameDelta
         : undefined;
-    previous.set(stat.id, { bytes, timestamp: stat.timestamp, packets, packetsLost, frames, totalProcessingTime });
+    previous.set(stat.id, {
+      bytes,
+      timestamp: stat.timestamp,
+      packets,
+      packetsLost,
+      frames,
+      totalProcessingTime,
+    });
 
-    const codec = stat.codecId ? (report.get(stat.codecId) as ExtendedStat | undefined) : undefined;
+    const codec = stat.codecId
+      ? (report.get(stat.codecId) as ExtendedStat | undefined)
+      : undefined;
     video.push({
       id: stat.id,
       codec: codec?.mimeType,
@@ -223,12 +291,18 @@ export async function collectStats(pc: RTCPeerConnection, previous: Map<string, 
       packetLossPercent,
       bitrate,
       targetBitrate: finite(stat.targetBitrate),
-      jitterMs: milliseconds(finite(outbound ? remoteRtp?.jitter : stat.jitter)),
-      roundTripTimeMs: milliseconds(finite(remoteRtp?.roundTripTime)) ?? network?.currentRoundTripTimeMs,
+      jitterMs: milliseconds(
+        finite(outbound ? remoteRtp?.jitter : stat.jitter),
+      ),
+      roundTripTimeMs:
+        milliseconds(finite(remoteRtp?.roundTripTime)) ??
+        network?.currentRoundTripTimeMs,
       frames: finite(frames),
       framesDropped: finite(stat.framesDropped),
       frameProcessingMs,
-      retransmittedPackets: finite(stat.retransmittedPacketsSent ?? stat.retransmittedPacketsReceived),
+      retransmittedPackets: finite(
+        stat.retransmittedPacketsSent ?? stat.retransmittedPacketsReceived,
+      ),
       nackCount: finite(stat.nackCount),
       pliCount: finite(stat.pliCount),
       firCount: finite(stat.firCount),

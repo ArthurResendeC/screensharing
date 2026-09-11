@@ -18,9 +18,18 @@ export const roomNameSchema = z
   .min(1)
   .transform(value => value.normalize('NFC'))
   .pipe(z.string().max(ROOM_NAME_MAX_LENGTH));
-export const roomPasswordSchema = z.string().min(1).max(ROOM_PASSWORD_MAX_LENGTH);
-export const roomCredentialSchema = z.string().min(1).max(ROOM_CREDENTIAL_MAX_LENGTH);
-export const roomAccessTokenSchema = z.string().min(1).max(ROOM_ACCESS_TOKEN_MAX_LENGTH);
+export const roomPasswordSchema = z
+  .string()
+  .min(1)
+  .max(ROOM_PASSWORD_MAX_LENGTH);
+export const roomCredentialSchema = z
+  .string()
+  .min(1)
+  .max(ROOM_CREDENTIAL_MAX_LENGTH);
+export const roomAccessTokenSchema = z
+  .string()
+  .min(1)
+  .max(ROOM_ACCESS_TOKEN_MAX_LENGTH);
 const candidateSchema = z
   .object({
     candidate: z.string().max(4096),
@@ -41,22 +50,36 @@ const offer = z
   .object({
     type: z.literal('offer'),
     ...route,
-    sdp: z.object({ type: z.literal('offer'), sdp: z.string().min(1).max(60000) }).strict(),
+    sdp: z
+      .object({ type: z.literal('offer'), sdp: z.string().min(1).max(60000) })
+      .strict(),
   })
   .strict();
 const answer = z
   .object({
     type: z.literal('answer'),
     ...route,
-    sdp: z.object({ type: z.literal('answer'), sdp: z.string().min(1).max(60000) }).strict(),
+    sdp: z
+      .object({ type: z.literal('answer'), sdp: z.string().min(1).max(60000) })
+      .strict(),
   })
   .strict();
-const ice = z.object({ type: z.literal('ice-candidate'), ...route, candidate: candidateSchema }).strict();
+const ice = z
+  .object({
+    type: z.literal('ice-candidate'),
+    ...route,
+    candidate: candidateSchema,
+  })
+  .strict();
 // Publicação no SFU Cloudflare Realtime: onde encontrar as tracks de quem compartilha.
 // Sempre null no modo mesh WebRTC.
 const trackName = z.string().min(1).max(128);
 const rtPublicationSchema = z
-  .object({ sessionId: z.string().min(1).max(128), video: trackName, audio: trackName.nullable() })
+  .object({
+    sessionId: z.string().min(1).max(128),
+    video: trackName,
+    audio: trackName.nullable(),
+  })
   .strict();
 export type RtPublication = z.infer<typeof rtPublicationSchema>;
 const participant = z
@@ -70,7 +93,13 @@ const participant = z
 export type Participant = z.infer<typeof participant>;
 
 export const clientMessageSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('create-room'), name: roomNameSchema, password: roomPasswordSchema.optional() }).strict(),
+  z
+    .object({
+      type: z.literal('create-room'),
+      name: roomNameSchema,
+      password: roomPasswordSchema.optional(),
+    })
+    .strict(),
   z
     .object({
       type: z.literal('join-room'),
@@ -89,7 +118,13 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   rtPublicationSchema.extend({ type: z.literal('rt-publish') }).strict(),
   z.object({ type: z.literal('rt-unpublish') }).strict(),
   z.object({ type: z.literal('set-alias'), alias: aliasSchema }).strict(),
-  z.object({ type: z.literal('watch'), targetPeerId: id.nullable(), sessionId: id }).strict(),
+  z
+    .object({
+      type: z.literal('watch'),
+      targetPeerId: id.nullable(),
+      sessionId: id,
+    })
+    .strict(),
   z.object({ type: z.literal('ping') }).strict(),
 ]);
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
@@ -114,13 +149,29 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
   z
     .object({
       type: z.literal('room-access-denied'),
-      reason: z.enum(['invalid-invite', 'password-required', 'wrong-password', 'too-many-attempts']),
+      reason: z.enum([
+        'invalid-invite',
+        'password-required',
+        'wrong-password',
+        'too-many-attempts',
+      ]),
     })
     .strict(),
-  z.object({ type: z.literal('room-state'), peers: z.array(participant).max(MAX_ROOM_MESSAGE_PARTICIPANTS) }),
-  z.object({ type: z.literal('watching'), peerId: id.nullable(), sessionId: id }),
+  z.object({
+    type: z.literal('room-state'),
+    peers: z.array(participant).max(MAX_ROOM_MESSAGE_PARTICIPANTS),
+  }),
+  z.object({
+    type: z.literal('watching'),
+    peerId: id.nullable(),
+    sessionId: id,
+  }),
   z.object({ type: z.literal('subscriber-joined'), peerId: id, sessionId: id }),
-  z.object({ type: z.literal('subscription-ended'), peerId: id, sessionId: id }),
+  z.object({
+    type: z.literal('subscription-ended'),
+    peerId: id,
+    sessionId: id,
+  }),
   z.object({ type: z.literal('error'), message: z.string().max(300) }),
   z.object({ type: z.literal('pong') }).strict(),
   offer.omit({ targetPeerId: true }).extend({ peerId: id }),
@@ -128,4 +179,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
   ice.omit({ targetPeerId: true }).extend({ peerId: id }),
 ]);
 export type ServerMessage = z.infer<typeof serverMessageSchema>;
-export type PeerSignal = Extract<ServerMessage, { type: 'offer' | 'answer' | 'ice-candidate' }>;
+export type PeerSignal = Extract<
+  ServerMessage,
+  { type: 'offer' | 'answer' | 'ice-candidate' }
+>;

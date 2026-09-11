@@ -4,7 +4,13 @@ import { setVideoDegradation } from '../src/lib/webrtc/rtcConfiguration';
 
 class FakeSender {
   constructor(public track: { kind: string } | null) {}
-  params: RTCRtpSendParameters = { encodings: [{}], transactionId: '', codecs: [], headerExtensions: [], rtcp: {} };
+  params: RTCRtpSendParameters = {
+    encodings: [{}],
+    transactionId: '',
+    codecs: [],
+    headerExtensions: [],
+    rtcp: {},
+  };
   getParameters() {
     return this.params;
   }
@@ -15,7 +21,10 @@ class FakeSender {
 
 class FakeConnection {
   signalingState = 'have-local-offer';
-  senders = [new FakeSender({ kind: 'video' }), new FakeSender({ kind: 'audio' })];
+  senders = [
+    new FakeSender({ kind: 'video' }),
+    new FakeSender({ kind: 'audio' }),
+  ];
   remoteDescription: RTCSessionDescriptionInit | null = null;
   localDescription: RTCSessionDescriptionInit | null = null;
   async setRemoteDescription(sdp: RTCSessionDescriptionInit) {
@@ -44,7 +53,8 @@ class FakeConnection {
 
 test('degradationPreference and maxBitrate reach the video sender and follow live changes', async () => {
   const original = globalThis.RTCPeerConnection;
-  globalThis.RTCPeerConnection = FakeConnection as unknown as typeof RTCPeerConnection;
+  globalThis.RTCPeerConnection =
+    FakeConnection as unknown as typeof RTCPeerConnection;
   try {
     setVideoDegradation('framerate');
     const peers = new Peers(
@@ -57,10 +67,18 @@ test('degradationPreference and maxBitrate reach the video sender and follow liv
     );
     const peerId = crypto.randomUUID();
     const sessionId = crypto.randomUUID();
-    await peers.offer(peerId, sessionId, { getTracks: () => [] } as unknown as MediaStream);
-    await peers.receive({ type: 'answer', peerId, sessionId, sdp: { type: 'answer', sdp: 'answer' } });
+    await peers.offer(peerId, sessionId, {
+      getTracks: () => [],
+    } as unknown as MediaStream);
+    await peers.receive({
+      type: 'answer',
+      peerId,
+      sessionId,
+      sdp: { type: 'answer', sdp: 'answer' },
+    });
 
-    const connection = peers.peers.get(sessionId)!.pc as unknown as FakeConnection;
+    const connection = peers.peers.get(sessionId)!
+      .pc as unknown as FakeConnection;
     const [video, audio] = connection.senders;
     expect(video!.params.degradationPreference).toBe('maintain-framerate');
     expect(video!.params.encodings[0]!.maxBitrate).toBeGreaterThan(0);

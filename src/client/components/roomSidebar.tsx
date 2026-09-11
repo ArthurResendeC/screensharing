@@ -1,13 +1,28 @@
 import { useState, type CSSProperties } from 'react';
 import { ALIAS_MAX_LENGTH } from '../../lib/signaling/messages';
-import { isVideoCodecSupported, type VideoCodecPreference, VIDEO_CODEC_PREFERENCES } from '../../lib/webrtc/codecs';
+import {
+  isVideoCodecSupported,
+  type VideoCodecPreference,
+  VIDEO_CODEC_PREFERENCES,
+} from '../../lib/webrtc/codecs';
 import type { MediaProvider } from '../media/types';
 import { ACCENTS, type ScreenShareState } from '../screenShare';
 import { inviteUrl, listFavoriteRooms } from '../roomStorage';
-import { avatarColor, initialsOf, participantName } from '../participantPresentation';
+import {
+  avatarColor,
+  initialsOf,
+  participantName,
+} from '../participantPresentation';
 import { ParticipantList } from './roomParticipants';
 import { ArrowLeftIcon, GearIcon, LeaveIcon, ScreenIcon } from './icons';
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
 
 type Props = {
   roomId: string;
@@ -25,24 +40,38 @@ const CODEC_LABELS: Record<VideoCodecPreference, string> = {
   av1: 'AV1',
 };
 
-const DEGRADATION_ITEMS: Array<{ label: string; value: ScreenShareState['degradation'] }> = [
+const DEGRADATION_ITEMS: Array<{
+  label: string;
+  value: ScreenShareState['degradation'];
+}> = [
   { value: 'framerate', label: 'Fluidez — FPS estável, imagem pode borrar' },
   { value: 'balanced', label: 'Equilíbrio entre FPS e nitidez' },
   { value: 'resolution', label: 'Nitidez — imagem nítida, FPS pode cair' },
 ];
 
-const CAPTURE_ITEMS: Array<{ label: string; value: ScreenShareState['captureQuality'] }> = [
+const CAPTURE_ITEMS: Array<{
+  label: string;
+  value: ScreenShareState['captureQuality'];
+}> = [
   { value: 'fluid', label: 'Fluida — 1080p · 60 FPS' },
   { value: 'balanced', label: 'Equilibrada — 1440p · 30 FPS' },
   { value: 'sharp', label: 'Nítida — 1440p · 60 FPS' },
 ];
 
-export function RoomSidebar({ roomId, state, controller, collapsed, onDebug }: Props) {
+export function RoomSidebar({
+  roomId,
+  state,
+  controller,
+  collapsed,
+  onDebug,
+}: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const favoriteRooms = listFavoriteRooms();
   const connected = state.socketState === 'connected' && Boolean(state.selfId);
   const selfName = state.selfId ? controller.nameOf(state.selfId) : 'Você';
-  const fallbackName = state.selfId ? participantName(state.selfId) : 'Participante';
+  const fallbackName = state.selfId
+    ? participantName(state.selfId)
+    : 'Participante';
   const saveAlias = (event: React.SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
     const value = new FormData(event.currentTarget).get('alias-rename');
@@ -81,7 +110,11 @@ export function RoomSidebar({ roomId, state, controller, collapsed, onDebug }: P
           <ArrowLeftIcon />
         </a>
       </div>
-      <aside id="room-sidebar" className={`sidebar${collapsed ? ' is-collapsed' : ''}`} aria-hidden={collapsed}>
+      <aside
+        id="room-sidebar"
+        className={`sidebar${collapsed ? ' is-collapsed' : ''}`}
+        aria-hidden={collapsed}
+      >
         <div className="sidebar-header">
           <div className="title-row">
             <span>{state.roomName || 'Sala de transmissão'}</span>
@@ -108,7 +141,14 @@ export function RoomSidebar({ roomId, state, controller, collapsed, onDebug }: P
           </ul>
         </div>
         <button type="button" className="debug-toggle-btn" onClick={onDebug}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+          >
             <polyline points="9 18 15 12 9 6" />
           </svg>
           Debug WebRTC
@@ -138,7 +178,12 @@ export function RoomSidebar({ roomId, state, controller, collapsed, onDebug }: P
                   type="button"
                   className={`swatch${color === state.accent ? ' is-active' : ''}`}
                   title={label}
-                  style={{ background: color, '--swatch-color': color } as CSSProperties}
+                  style={
+                    {
+                      background: color,
+                      '--swatch-color': color,
+                    } as CSSProperties
+                  }
                   onClick={() => controller.setAccent(color)}
                 />
               ))}
@@ -179,7 +224,9 @@ export function RoomSidebar({ roomId, state, controller, collapsed, onDebug }: P
             <Select
               items={CAPTURE_ITEMS}
               value={state.captureQuality}
-              onValueChange={value => value && void controller.setCaptureQuality(value)}
+              onValueChange={value =>
+                value && void controller.setCaptureQuality(value)
+              }
             >
               <SelectTrigger aria-label="Resolução e taxa de quadros da captura">
                 <SelectValue />
@@ -196,9 +243,14 @@ export function RoomSidebar({ roomId, state, controller, collapsed, onDebug }: P
             </Select>
             <span className="label">Codec de vídeo</span>
             <Select
-              items={VIDEO_CODEC_PREFERENCES.map(value => ({ label: CODEC_LABELS[value], value }))}
+              items={VIDEO_CODEC_PREFERENCES.map(value => ({
+                label: CODEC_LABELS[value],
+                value,
+              }))}
               value={state.codecPreference}
-              onValueChange={value => value && controller.setCodecPreference(value)}
+              onValueChange={value =>
+                value && controller.setCodecPreference(value)
+              }
             >
               <SelectTrigger aria-label="Codec preferido para o próximo compartilhamento">
                 <SelectValue />
@@ -206,7 +258,11 @@ export function RoomSidebar({ roomId, state, controller, collapsed, onDebug }: P
               <SelectContent>
                 <SelectGroup>
                   {VIDEO_CODEC_PREFERENCES.map(codec => (
-                    <SelectItem key={codec} value={codec} disabled={!isVideoCodecSupported(codec)}>
+                    <SelectItem
+                      key={codec}
+                      value={codec}
+                      disabled={!isVideoCodecSupported(codec)}
+                    >
                       {CODEC_LABELS[codec]}
                       {isVideoCodecSupported(codec) ? '' : ' — indisponível'}
                     </SelectItem>
@@ -214,11 +270,18 @@ export function RoomSidebar({ roomId, state, controller, collapsed, onDebug }: P
                 </SelectGroup>
               </SelectContent>
             </Select>
-            <span className="settings-hint">A alteração vale no próximo compartilhamento.</span>
+            <span className="settings-hint">
+              A alteração vale no próximo compartilhamento.
+            </span>
           </div>
         )}
         <div className="sidebar-footer">
-          <div className="avatar" style={{ background: state.selfId ? avatarColor(selfName) : undefined }}>
+          <div
+            className="avatar"
+            style={{
+              background: state.selfId ? avatarColor(selfName) : undefined,
+            }}
+          >
             {state.selfId ? initialsOf(selfName) : ''}
           </div>
           <div className="info">

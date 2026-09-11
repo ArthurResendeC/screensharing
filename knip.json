@@ -9,5 +9,11 @@
     "tests/e2e/*.spec.ts",
     "tests/e2e/*.setup.ts"
   ],
-  "project": ["server/**/*.ts", "src/**/*.{ts,tsx}", "scripts/**/*.ts", ".railway/**/*.ts", "tests/**/*.ts"]
+  "project": [
+    "server/**/*.ts",
+    "src/**/*.{ts,tsx}",
+    "scripts/**/*.ts",
+    ".railway/**/*.ts",
+    "tests/**/*.ts"
+  ]
 }

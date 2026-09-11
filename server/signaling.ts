@@ -89,7 +89,10 @@ export class SignalingHub {
   }
 
   private broadcast(room: Room) {
-    const message: ServerMessage = { type: 'room-state', peers: this.participants(room) };
+    const message: ServerMessage = {
+      type: 'room-state',
+      peers: this.participants(room),
+    };
     for (const member of room.members.values()) this.send(member, message);
   }
 
@@ -104,7 +107,11 @@ export class SignalingHub {
     });
     const publisher = room.members.get(subscription.publisherId);
     if (publisher)
-      this.send(publisher, { type: 'subscription-ended', peerId: viewer.id, sessionId: subscription.sessionId });
+      this.send(publisher, {
+        type: 'subscription-ended',
+        peerId: viewer.id,
+        sessionId: subscription.sessionId,
+      });
   }
 
   private stopPublishing(publisher: Client, room: Room) {
@@ -112,7 +119,8 @@ export class SignalingHub {
     publisher.rtPublication = undefined;
     for (const viewer of room.members.values()) {
       for (const subscription of viewer.watching.values())
-        if (subscription.publisherId === publisher.id) this.unsubscribe(viewer, room, subscription.sessionId);
+        if (subscription.publisherId === publisher.id)
+          this.unsubscribe(viewer, room, subscription.sessionId);
     }
   }
 
@@ -123,7 +131,8 @@ export class SignalingHub {
     client.socket = undefined;
     const room = roomId ? this.rooms.get(roomId) : undefined;
     if (!room || !roomId) return;
-    for (const sessionId of client.watching.keys()) this.unsubscribe(client, room, sessionId);
+    for (const sessionId of client.watching.keys())
+      this.unsubscribe(client, room, sessionId);
     this.stopPublishing(client, room);
     room.members.delete(client.id);
     if (!room.members.size) this.rooms.delete(roomId);
@@ -135,7 +144,8 @@ export class SignalingHub {
   }
 
   message(client: Client, data: string | BufferSource) {
-    const fail = (message: string) => this.send(client, { type: 'error', message });
+    const fail = (message: string) =>
+      this.send(client, { type: 'error', message });
     if (Date.now() - client.window > 1000) {
       client.window = Date.now();
       client.count = 0;
@@ -172,7 +182,12 @@ export class SignalingHub {
         type: 'room-created',
         roomId,
         roomName: message.name,
-        credential: issueRoomCredential(this.roomTokenSecret, roomId, message.name, message.password),
+        credential: issueRoomCredential(
+          this.roomTokenSecret,
+          roomId,
+          message.name,
+          message.password,
+        ),
         passwordProtected: Boolean(message.password),
       });
       return;
@@ -183,27 +198,51 @@ export class SignalingHub {
         return;
       }
       if (client.failedRoomAttempts >= 5) {
-        this.send(client, { type: 'room-access-denied', reason: 'too-many-attempts' });
+        this.send(client, {
+          type: 'room-access-denied',
+          reason: 'too-many-attempts',
+        });
         client.socket?.close(1008, 'Too many room access attempts');
         return;
       }
-      const verified = verifyRoomCredential(this.roomTokenSecret, message.roomId, message.credential);
+      const verified = verifyRoomCredential(
+        this.roomTokenSecret,
+        message.roomId,
+        message.credential,
+      );
       if (!verified.ok) {
         client.failedRoomAttempts++;
-        this.send(client, { type: 'room-access-denied', reason: verified.reason });
+        this.send(client, {
+          type: 'room-access-denied',
+          reason: verified.reason,
+        });
         return;
       }
       let accessToken: string | null = null;
       let accessTokenExpiresAt: number | null = null;
       if (verified.room.passwordProof) {
         const access = message.accessToken
-          ? verifyRoomAccessToken(this.roomTokenSecret, message.roomId, message.accessToken)
+          ? verifyRoomAccessToken(
+              this.roomTokenSecret,
+              message.roomId,
+              message.accessToken,
+            )
           : null;
         if (access) {
           accessToken = message.accessToken ?? null;
           accessTokenExpiresAt = access.expiresAt;
-        } else if (message.password && verifyRoomPassword(this.roomTokenSecret, verified.room, message.password)) {
-          const issued = issueRoomAccessToken(this.roomTokenSecret, message.roomId);
+        } else if (
+          message.password &&
+          verifyRoomPassword(
+            this.roomTokenSecret,
+            verified.room,
+            message.password,
+          )
+        ) {
+          const issued = issueRoomAccessToken(
+            this.roomTokenSecret,
+            message.roomId,
+          );
           accessToken = issued.token;
           accessTokenExpiresAt = issued.expiresAt;
         } else {
@@ -220,13 +259,19 @@ export class SignalingHub {
         room = { name: verified.room.roomName, members: new Map() };
         this.rooms.set(message.roomId, room);
       }
-      if (this.maxRoomParticipants && room.members.size >= this.maxRoomParticipants) {
-        fail(`Sala cheia: limite de ${this.maxRoomParticipants} participantes.`);
+      if (
+        this.maxRoomParticipants &&
+        room.members.size >= this.maxRoomParticipants
+      ) {
+        fail(
+          `Sala cheia: limite de ${this.maxRoomParticipants} participantes.`,
+        );
         return;
       }
       // A reconnecting client reclaims its previous identity (unless already taken)
       // so peers can resume their subscriptions after a redeploy drops every socket.
-      if (message.clientId && !room.members.has(message.clientId)) client.id = message.clientId;
+      if (message.clientId && !room.members.has(message.clientId))
+        client.id = message.clientId;
       client.roomId = message.roomId;
       room.members.set(client.id, client);
       this.send(client, {
@@ -247,7 +292,10 @@ export class SignalingHub {
       fail('Entre em uma sala primeiro.');
       return;
     }
-    if (message.type === 'sharing-started' || message.type === 'sharing-stopped') {
+    if (
+      message.type === 'sharing-started' ||
+      message.type === 'sharing-stopped'
+    ) {
       if (message.type === 'sharing-started') client.sharing = true;
       else this.stopPublishing(client, room);
       this.broadcast(room);
@@ -255,7 +303,11 @@ export class SignalingHub {
     }
     if (message.type === 'rt-publish') {
       client.sharing = true;
-      client.rtPublication = { sessionId: message.sessionId, video: message.video, audio: message.audio };
+      client.rtPublication = {
+        sessionId: message.sessionId,
+        video: message.video,
+        audio: message.audio,
+      };
       this.broadcast(room);
       return;
     }
@@ -274,12 +326,22 @@ export class SignalingHub {
     if (message.type === 'watch') {
       if (!message.targetPeerId) {
         this.unsubscribe(client, room, message.sessionId);
-        this.send(client, { type: 'watching', peerId: null, sessionId: message.sessionId });
+        this.send(client, {
+          type: 'watching',
+          peerId: null,
+          sessionId: message.sessionId,
+        });
         return;
       }
-      const publisher = message.targetPeerId ? room.members.get(message.targetPeerId) : undefined;
-      const duplicateSession = [...room.members.values()].some(member => member.watching.has(message.sessionId));
-      const duplicatePublisher = [...client.watching.values()].some(item => item.publisherId === message.targetPeerId);
+      const publisher = message.targetPeerId
+        ? room.members.get(message.targetPeerId)
+        : undefined;
+      const duplicateSession = [...room.members.values()].some(member =>
+        member.watching.has(message.sessionId),
+      );
+      const duplicatePublisher = [...client.watching.values()].some(
+        item => item.publisherId === message.targetPeerId,
+      );
       if (
         !publisher?.sharing ||
         publisher === client ||
@@ -287,14 +349,29 @@ export class SignalingHub {
         duplicatePublisher ||
         client.watching.size >= MAX_WATCHED_STREAMS
       ) {
-        this.send(client, { type: 'watching', peerId: null, sessionId: message.sessionId });
+        this.send(client, {
+          type: 'watching',
+          peerId: null,
+          sessionId: message.sessionId,
+        });
         fail('Transmissão indisponível ou seleção inválida.');
         return;
       }
-      this.send(client, { type: 'watching', peerId: publisher?.id ?? null, sessionId: message.sessionId });
+      this.send(client, {
+        type: 'watching',
+        peerId: publisher?.id ?? null,
+        sessionId: message.sessionId,
+      });
       if (publisher) {
-        client.watching.set(message.sessionId, { publisherId: publisher.id, sessionId: message.sessionId });
-        this.send(publisher, { type: 'subscriber-joined', peerId: client.id, sessionId: message.sessionId });
+        client.watching.set(message.sessionId, {
+          publisherId: publisher.id,
+          sessionId: message.sessionId,
+        });
+        this.send(publisher, {
+          type: 'subscriber-joined',
+          peerId: client.id,
+          sessionId: message.sessionId,
+        });
       }
       return;
     }
@@ -305,10 +382,16 @@ export class SignalingHub {
     }
     const targetSubscription = target.watching.get(message.sessionId);
     const clientSubscription = client.watching.get(message.sessionId);
-    const sending = client.sharing && targetSubscription?.publisherId === client.id;
-    const receiving = target.sharing && clientSubscription?.publisherId === target.id;
+    const sending =
+      client.sharing && targetSubscription?.publisherId === client.id;
+    const receiving =
+      target.sharing && clientSubscription?.publisherId === target.id;
     const authorized =
-      message.type === 'offer' ? sending : message.type === 'answer' ? receiving : sending || receiving;
+      message.type === 'offer'
+        ? sending
+        : message.type === 'answer'
+          ? receiving
+          : sending || receiving;
     if (!authorized) return;
     const { targetPeerId: _target, ...payload } = message;
     void _target;
@@ -329,7 +412,8 @@ export class SignalingHub {
 
   close() {
     // 1012 = service restart: tells clients this is a redeploy, not a lost connection.
-    for (const client of this.clients) client.socket?.close(1012, 'Server restarting');
+    for (const client of this.clients)
+      client.socket?.close(1012, 'Server restarting');
     this.clients.clear();
     this.rooms.clear();
   }

@@ -46,11 +46,25 @@ const publicConfigSchema = z.object({
 
 function Icon({ kind }: { kind: Theme }) {
   return kind === 'dark' ? (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
     </svg>
   ) : (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <circle cx="12" cy="12" r="4.2" />
       <path d="M12 2.5v2.5M12 19v2.5M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2.5 12H5M19 12h2.5M4.2 19.8 6 18M18 6l1.8-1.8" />
     </svg>
@@ -69,10 +83,14 @@ function roomIdFromPath() {
 
 function inviteFromLocation(roomId: string) {
   const incoming = parseInvite(location.href);
-  const stored = roomIdSchema.safeParse(roomId).success ? findStoredInvite(roomId) : null;
+  const stored = roomIdSchema.safeParse(roomId).success
+    ? findStoredInvite(roomId)
+    : null;
   if (!incoming) return stored;
   const access =
-    stored?.credential === incoming.credential ? stored : findRoomAccess(incoming.roomId, incoming.credential);
+    stored?.credential === incoming.credential
+      ? stored
+      : findRoomAccess(incoming.roomId, incoming.credential);
   return access
     ? {
         ...incoming,
@@ -115,7 +133,9 @@ function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
     const parsedName = roomNameSchema.safeParse(form.get('room-name'));
     const passwordValue = form.get('room-password');
     const parsedPassword =
-      passwordValue === '' ? { success: true as const, data: undefined } : roomPasswordSchema.safeParse(passwordValue);
+      passwordValue === ''
+        ? { success: true as const, data: undefined }
+        : roomPasswordSchema.safeParse(passwordValue);
     if (!parsedName.success || !parsedPassword.success) {
       setError(
         `Informe um nome e, se quiser proteger a sala, use uma senha de até ${ROOM_PASSWORD_MAX_LENGTH} caracteres.`,
@@ -130,7 +150,11 @@ function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
       saveFavoriteRoom({ ...invite, roomName: created.roomName });
       onOpenRoom(invite, parsedPassword.data);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Não foi possível criar a sala.');
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Não foi possível criar a sala.',
+      );
     } finally {
       setCreating(false);
     }
@@ -157,11 +181,19 @@ function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
         ))}
       </div>
       <h1>ReShare</h1>
-      <p>Compartilhe sua tela com até quatro amigos. Todos podem transmitir e escolher uma tela para assistir.</p>
+      <p>
+        Compartilhe sua tela com até quatro amigos. Todos podem transmitir e
+        escolher uma tela para assistir.
+      </p>
       <form className="lobby-card" onSubmit={event => void submitCreate(event)}>
         <h2>Criar sala</h2>
         <label htmlFor="room-name">Nome da sala</label>
-        <input id="room-name" name="room-name" maxLength={ROOM_NAME_MAX_LENGTH} required />
+        <input
+          id="room-name"
+          name="room-name"
+          maxLength={ROOM_NAME_MAX_LENGTH}
+          required
+        />
         <label htmlFor="new-room-password">Senha (opcional)</label>
         <div className="password-input">
           <input
@@ -186,7 +218,11 @@ function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
         </button>
       </form>
       {lastRoom && !favorites.some(room => room.roomId === lastRoom.roomId) && (
-        <button type="button" className="btn btn-outline" onClick={() => onOpenRoom(lastRoom)}>
+        <button
+          type="button"
+          className="btn btn-outline"
+          onClick={() => onOpenRoom(lastRoom)}
+        >
           Voltar à última sala
         </button>
       )}
@@ -199,22 +235,36 @@ function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
         </button>
       </form>
       {favorites.length > 0 && (
-        <section className="favorite-rooms" aria-labelledby="favorite-rooms-title">
+        <section
+          className="favorite-rooms"
+          aria-labelledby="favorite-rooms-title"
+        >
           <h2 id="favorite-rooms-title">Salas favoritas</h2>
           {favorites.map(room => (
             <div className="favorite-room" key={room.roomId}>
-              <button type="button" className="favorite-room-open" onClick={() => onOpenRoom(room)}>
+              <button
+                type="button"
+                className="favorite-room-open"
+                onClick={() => onOpenRoom(room)}
+              >
                 <strong>{room.roomName}</strong>
                 <span className="mono">{room.roomId.slice(0, 8)}</span>
               </button>
-              <button type="button" className="btn btn-outline" onClick={() => removeFavorite(room.roomId)}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => removeFavorite(room.roomId)}
+              >
                 Remover
               </button>
             </div>
           ))}
         </section>
       )}
-      <p>Compartilhe o link e a senha separadamente. A senha não é salva pelo ReShare.</p>
+      <p>
+        Compartilhe o link e a senha separadamente. A senha não é salva pelo
+        ReShare.
+      </p>
       {error && (
         <p role="alert" className="error">
           {error}
@@ -280,14 +330,19 @@ function App() {
 
   let page;
   if (!route) page = <Lobby onOpenRoom={openRoom} />;
-  else if (!roomIdSchema.safeParse(route.roomId).success || !route.invite) page = <InvalidRoom />;
+  else if (!roomIdSchema.safeParse(route.roomId).success || !route.invite)
+    page = <InvalidRoom />;
   else if (
     roomPasswordProtected(route.invite.credential) === true &&
     !route.password &&
     !validRoomAccessToken(route.invite)
   )
     page = (
-      <RoomPasswordGate onSubmit={password => setRoute(current => (current ? { ...current, password } : current))} />
+      <RoomPasswordGate
+        onSubmit={password =>
+          setRoute(current => (current ? { ...current, password } : current))
+        }
+      />
     );
   else
     page = (
@@ -302,7 +357,8 @@ function App() {
     <Fragment>
       {!online && (
         <div className="connectivity-banner" role="status" aria-live="polite">
-          Você está offline. Salas e transmissões exigem internet; a conexão será retomada automaticamente.
+          Você está offline. Salas e transmissões exigem internet; a conexão
+          será retomada automaticamente.
         </div>
       )}
       {page}
@@ -313,7 +369,10 @@ function App() {
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   try {
-    await navigator.serviceWorker.register('/service-worker.js', { scope: '/', updateViaCache: 'none' });
+    await navigator.serviceWorker.register('/service-worker.js', {
+      scope: '/',
+      updateViaCache: 'none',
+    });
   } catch {
     // A aplicação continua funcional em navegadores sem suporte ou com o recurso bloqueado.
   }

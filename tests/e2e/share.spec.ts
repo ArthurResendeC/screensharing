@@ -7,8 +7,10 @@ type TestWindow = Window & {
   testPictureInPictureRequests: number;
   testAutoPipHandler: (() => void) | null;
 };
-const remoteVideo = (page: Page) => page.getByLabel('Transmissão selecionada', { exact: true });
-const secondRemoteVideo = (page: Page) => page.getByLabel('Segunda transmissão selecionada', { exact: true });
+const remoteVideo = (page: Page) =>
+  page.getByLabel('Transmissão selecionada', { exact: true });
+const secondRemoteVideo = (page: Page) =>
+  page.getByLabel('Segunda transmissão selecionada', { exact: true });
 const shareButton = (page: Page) => page.locator('[data-share]');
 const stopShareButton = (page: Page) => page.locator('[data-stop-share]');
 const participantCount = (page: Page) => page.locator('[data-participants]');
@@ -16,7 +18,9 @@ const ROOM_PASSWORD = 'password-for-e2e';
 
 async function createProtectedRoom(page: Page, name = 'Sala E2E') {
   await page.getByLabel('Nome da sala').fill(name);
-  await page.getByLabel('Senha (opcional)', { exact: true }).fill(ROOM_PASSWORD);
+  await page
+    .getByLabel('Senha (opcional)', { exact: true })
+    .fill(ROOM_PASSWORD);
   await page.getByRole('button', { name: 'Criar sala' }).click();
   await expect(page).toHaveURL(/\/room\//);
 }
@@ -36,7 +40,10 @@ async function instrument(context: BrowserContext) {
     let fullscreenElement: Element | null = null;
     Object.defineProperties(document, {
       pictureInPictureEnabled: { configurable: true, get: () => true },
-      pictureInPictureElement: { configurable: true, get: () => pictureInPictureElement },
+      pictureInPictureElement: {
+        configurable: true,
+        get: () => pictureInPictureElement,
+      },
       fullscreenEnabled: { configurable: true, get: () => true },
       fullscreenElement: { configurable: true, get: () => fullscreenElement },
     });
@@ -47,7 +54,11 @@ async function instrument(context: BrowserContext) {
     HTMLVideoElement.prototype.requestPictureInPicture = async function () {
       (window as unknown as TestWindow).testPictureInPictureRequests++;
       enterPictureInPicture(this);
-      return Object.assign(new EventTarget(), { width: 640, height: 360, onresize: null });
+      return Object.assign(new EventTarget(), {
+        width: 640,
+        height: 360,
+        onresize: null,
+      });
     };
     document.exitPictureInPicture = async () => {
       const previous = pictureInPictureElement;
@@ -67,10 +78,16 @@ async function instrument(context: BrowserContext) {
     };
 
     const mediaSession = navigator.mediaSession;
-    const nativeActionHandler = mediaSession.setActionHandler.bind(mediaSession);
-    mediaSession.setActionHandler = ((action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+    const nativeActionHandler =
+      mediaSession.setActionHandler.bind(mediaSession);
+    mediaSession.setActionHandler = ((
+      action: MediaSessionAction,
+      handler: MediaSessionActionHandler | null,
+    ) => {
       if ((action as string) === 'enterpictureinpicture') {
-        (window as unknown as TestWindow).testAutoPipHandler = handler ? () => handler({ action }) : null;
+        (window as unknown as TestWindow).testAutoPipHandler = handler
+          ? () => handler({ action })
+          : null;
         return;
       }
       nativeActionHandler(action, handler);
@@ -138,7 +155,9 @@ async function enterRoom(page: Page, name?: string) {
   const passwordGate = page.locator('[data-password-gate]');
   if (await passwordGate.isVisible()) {
     await page.getByLabel('Senha da sala').fill(ROOM_PASSWORD);
-    await passwordGate.getByRole('button', { name: 'Entrar', exact: true }).click();
+    await passwordGate
+      .getByRole('button', { name: 'Entrar', exact: true })
+      .click();
     await expect(passwordGate).toBeHidden();
   }
   const gate = page.locator('[data-name-gate]');
@@ -146,8 +165,11 @@ async function enterRoom(page: Page, name?: string) {
   // hidden and there is nothing to do, otherwise fill the name and enter.
   await gate.waitFor({ state: 'attached' });
   if (await gate.isHidden()) return;
-  if (name !== undefined) await page.getByLabel('Seu nome na sala', { exact: true }).fill(name);
-  await page.getByRole('button', { name: 'Entrar na sala', exact: true }).click();
+  if (name !== undefined)
+    await page.getByLabel('Seu nome na sala', { exact: true }).fill(name);
+  await page
+    .getByRole('button', { name: 'Entrar na sala', exact: true })
+    .click();
   await expect(gate).toBeHidden();
 }
 async function identity(page: Page) {
@@ -172,25 +194,31 @@ async function playing(page: Page, color: 'red' | 'blue', audio: number) {
         const [red, , blue] = ctx.getImageData(0, 0, 1, 1).data;
         return {
           color: red > 150 ? 'red' : blue > 150 ? 'blue' : 'none',
-          audio: (video.srcObject as MediaStream | null)?.getAudioTracks().length,
+          audio: (video.srcObject as MediaStream | null)?.getAudioTracks()
+            .length,
           playing: !video.paused && video.currentTime > 0,
           muted: video.muted,
         };
       }),
     )
     .toEqual({ color, audio, playing: true, muted: false });
-  await expect(page.getByText('Conexão: 1/1 conectadas', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Conexão: 1/1 conectadas', { exact: true }),
+  ).toBeVisible();
   if (audio) {
     await expect
       .poll(() =>
         page.evaluate(async () => {
           let bytes = 0;
-          for (const pc of (window as unknown as TestWindow).testConnections.filter(
-            pc => pc.connectionState === 'connected',
-          )) {
-            (await pc.getStats()).forEach((stat: RTCStats & { kind?: string; bytesReceived?: number }) => {
-              if (stat.type === 'inbound-rtp' && stat.kind === 'audio') bytes += stat.bytesReceived ?? 0;
-            });
+          for (const pc of (
+            window as unknown as TestWindow
+          ).testConnections.filter(pc => pc.connectionState === 'connected')) {
+            (await pc.getStats()).forEach(
+              (stat: RTCStats & { kind?: string; bytesReceived?: number }) => {
+                if (stat.type === 'inbound-rtp' && stat.kind === 'audio')
+                  bytes += stat.bytesReceived ?? 0;
+              },
+            );
           }
           return bytes;
         }),
@@ -200,10 +228,16 @@ async function playing(page: Page, color: 'red' | 'blue', audio: number) {
 }
 async function activeCounts(page: Page) {
   return page.evaluate(() => {
-    const active = (window as unknown as TestWindow).testConnections.filter(pc => pc.connectionState !== 'closed');
+    const active = (window as unknown as TestWindow).testConnections.filter(
+      pc => pc.connectionState !== 'closed',
+    );
     return {
-      sending: active.filter(pc => pc.getTransceivers().some(t => t.direction === 'sendonly')).length,
-      receiving: active.filter(pc => pc.getTransceivers().some(t => t.currentDirection === 'recvonly')).length,
+      sending: active.filter(pc =>
+        pc.getTransceivers().some(t => t.direction === 'sendonly'),
+      ).length,
+      receiving: active.filter(pc =>
+        pc.getTransceivers().some(t => t.currentDirection === 'recvonly'),
+      ).length,
       total: active.length,
     };
   });
@@ -215,17 +249,28 @@ async function cleared(page: Page) {
     .poll(async () => {
       const video = remoteVideo(page);
       if ((await video.count()) === 0) return true;
-      return video.evaluate((element: HTMLVideoElement) => element.srcObject === null);
+      return video.evaluate(
+        (element: HTMLVideoElement) => element.srcObject === null,
+      );
     })
     .toBe(true);
 }
 
-test('protected room validates its password and each browser manages its own favorite', async ({ page, browser }) => {
+test('protected room validates its password and each browser manages its own favorite', async ({
+  page,
+  browser,
+}) => {
   await page.goto('/');
   await createProtectedRoom(page, 'Planejamento semanal');
   await enterRoom(page, 'Criador');
-  await expect(page.getByText('Planejamento semanal', { exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Abrir sala favorita Planejamento semanal' })).toBeVisible();
+  await expect(
+    page.getByText('Planejamento semanal', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('link', {
+      name: 'Abrir sala favorita Planejamento semanal',
+    }),
+  ).toBeVisible();
   const invite = page.url();
   expect(invite).toContain('#credential=');
   expect(invite).not.toContain(ROOM_PASSWORD);
@@ -233,21 +278,38 @@ test('protected room validates its password and each browser manages its own fav
   const participantContext = await browser.newContext();
   const participant = await participantContext.newPage();
   await participant.goto(invite);
-  await expect(participant.getByRole('link', { name: 'Voltar ao início' })).toBeVisible();
+  await expect(
+    participant.getByRole('link', { name: 'Voltar ao início' }),
+  ).toBeVisible();
   await participant.getByLabel('Senha da sala').fill('wrong-password');
-  await participant.getByRole('button', { name: 'Entrar', exact: true }).click();
-  await expect(participant.getByText('Senha incorreta. Tente novamente.')).toBeVisible();
+  await participant
+    .getByRole('button', { name: 'Entrar', exact: true })
+    .click();
+  await expect(
+    participant.getByText('Senha incorreta. Tente novamente.'),
+  ).toBeVisible();
   await participant.getByLabel('Senha da sala').fill(ROOM_PASSWORD);
-  await participant.getByRole('button', { name: 'Entrar', exact: true }).click();
+  await participant
+    .getByRole('button', { name: 'Entrar', exact: true })
+    .click();
   await enterRoom(participant, 'Convidado');
-  await participant.getByRole('button', { name: 'Favoritar', exact: true }).click();
-  await expect(participant.getByRole('button', { name: 'Favoritada', exact: true })).toBeVisible();
+  await participant
+    .getByRole('button', { name: 'Favoritar', exact: true })
+    .click();
+  await expect(
+    participant.getByRole('button', { name: 'Favoritada', exact: true }),
+  ).toBeVisible();
   expect(
-    await participant.evaluate(password => Object.values(localStorage).join(' ').includes(password), ROOM_PASSWORD),
+    await participant.evaluate(
+      password => Object.values(localStorage).join(' ').includes(password),
+      ROOM_PASSWORD,
+    ),
   ).toBe(false);
 
   await participant.goto('/');
-  await expect(participant.getByText('Salas favoritas', { exact: true })).toBeVisible();
+  await expect(
+    participant.getByText('Salas favoritas', { exact: true }),
+  ).toBeVisible();
   await participant.getByText('Planejamento semanal', { exact: true }).click();
   await expect(participant.locator('[data-password-gate]')).toHaveCount(0);
   await expect(participant.locator('[data-participants]')).toHaveText('2');
@@ -275,7 +337,9 @@ test('five participants: simultaneous publishing, reciprocal watching and two re
 }) => {
   await instrument(context);
   const errors: string[] = [];
-  context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
+  context.on('page', page =>
+    page.on('pageerror', error => errors.push(error.message)),
+  );
   a.on('pageerror', error => errors.push(error.message));
   await capture(a, '#ff0000');
   await a.goto('/');
@@ -299,49 +363,104 @@ test('five participants: simultaneous publishing, reciprocal watching and two re
   await expect(participantCount(a)).toHaveText('5');
   await shareButton(a).click();
   await shareButton(b).click();
-  await expect(b.locator('[data-capture-info]')).toContainText('Sem áudio disponível nesta captura');
+  await expect(b.locator('[data-capture-info]')).toContainText(
+    'Sem áudio disponível nesta captura',
+  );
   // Publishing with no subscribers does not create any RTP connections.
-  await expect.poll(() => activeCounts(a)).toEqual({ sending: 0, receiving: 0, total: 0 });
+  await expect
+    .poll(() => activeCounts(a))
+    .toEqual({ sending: 0, receiving: 0, total: 0 });
   await Promise.all([choose(a, bName), choose(b, aName)]);
   await playing(a, 'blue', 0);
   await playing(b, 'red', 1);
   const bControls = b.locator('[data-media-controls]').first();
-  await expect.poll(() => bControls.evaluate(element => getComputedStyle(element).opacity)).toBe('0');
+  await expect
+    .poll(() =>
+      bControls.evaluate(element => getComputedStyle(element).opacity),
+    )
+    .toBe('0');
   await remoteVideo(b).hover();
-  await expect.poll(() => bControls.evaluate(element => getComputedStyle(element).opacity)).toBe('1');
+  await expect
+    .poll(() =>
+      bControls.evaluate(element => getComputedStyle(element).opacity),
+    )
+    .toBe('1');
   await b.getByRole('button', { name: 'Aumentar zoom', exact: true }).click();
-  await expect(b.getByRole('button', { name: 'Redefinir zoom, atualmente 125%', exact: true })).toBeEnabled();
-  expect(await remoteVideo(b).evaluate((video: HTMLVideoElement) => video.style.transform)).toContain('scale(1.25)');
-  await b.getByRole('button', { name: 'Redefinir zoom, atualmente 125%', exact: true }).click();
-  await expect(b.getByRole('button', { name: 'Diminuir zoom', exact: true })).toBeDisabled();
-  expect(await remoteVideo(b).evaluate((video: HTMLVideoElement) => video.style.transform)).toContain('scale(1)');
-  const muteButton = b.getByRole('button', { name: 'Desligar áudio', exact: true });
+  await expect(
+    b.getByRole('button', {
+      name: 'Redefinir zoom, atualmente 125%',
+      exact: true,
+    }),
+  ).toBeEnabled();
+  expect(
+    await remoteVideo(b).evaluate(
+      (video: HTMLVideoElement) => video.style.transform,
+    ),
+  ).toContain('scale(1.25)');
+  await b
+    .getByRole('button', {
+      name: 'Redefinir zoom, atualmente 125%',
+      exact: true,
+    })
+    .click();
+  await expect(
+    b.getByRole('button', { name: 'Diminuir zoom', exact: true }),
+  ).toBeDisabled();
+  expect(
+    await remoteVideo(b).evaluate(
+      (video: HTMLVideoElement) => video.style.transform,
+    ),
+  ).toContain('scale(1)');
+  const muteButton = b.getByRole('button', {
+    name: 'Desligar áudio',
+    exact: true,
+  });
   await muteButton.click();
-  await expect(b.getByRole('button', { name: 'Ligar áudio', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(
+    b.getByRole('button', { name: 'Ligar áudio', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
   await expect(remoteVideo(b)).toHaveJSProperty('muted', true);
   await b.getByRole('button', { name: 'Ligar áudio', exact: true }).click();
   await expect(remoteVideo(b)).toHaveJSProperty('muted', false);
 
-  await expect.poll(() => b.evaluate(() => Boolean((window as unknown as TestWindow).testAutoPipHandler))).toBe(true);
-  await b.evaluate(() => (window as unknown as TestWindow).testAutoPipHandler?.());
-  await expect(b.getByRole('button', { name: 'Sair do picture-in-picture', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
+  await expect
+    .poll(() =>
+      b.evaluate(() =>
+        Boolean((window as unknown as TestWindow).testAutoPipHandler),
+      ),
+    )
+    .toBe(true);
+  await b.evaluate(() =>
+    (window as unknown as TestWindow).testAutoPipHandler?.(),
   );
-  expect(await b.evaluate(() => (window as unknown as TestWindow).testPictureInPictureRequests)).toBe(1);
-  await b.getByRole('button', { name: 'Sair do picture-in-picture', exact: true }).click();
+  await expect(
+    b.getByRole('button', { name: 'Sair do picture-in-picture', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  expect(
+    await b.evaluate(
+      () => (window as unknown as TestWindow).testPictureInPictureRequests,
+    ),
+  ).toBe(1);
+  await b
+    .getByRole('button', { name: 'Sair do picture-in-picture', exact: true })
+    .click();
 
-  await b.getByRole('button', { name: 'Abrir em tela cheia', exact: true }).click();
-  await expect(b.getByRole('button', { name: 'Sair da tela cheia', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
-  await b.getByRole('button', { name: 'Sair da tela cheia', exact: true }).click();
+  await b
+    .getByRole('button', { name: 'Abrir em tela cheia', exact: true })
+    .click();
+  await expect(
+    b.getByRole('button', { name: 'Sair da tela cheia', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await b
+    .getByRole('button', { name: 'Sair da tela cheia', exact: true })
+    .click();
   for (const viewer of viewers) {
     await choose(viewer, aName);
     await playing(viewer, 'red', 1);
   }
-  await expect.poll(() => activeCounts(a)).toEqual({ sending: 4, receiving: 1, total: 5 });
+  await expect
+    .poll(() => activeCounts(a))
+    .toEqual({ sending: 4, receiving: 1, total: 5 });
   const c = viewers[0];
   await choose(c, bName);
   await expect(secondRemoteVideo(c)).toBeVisible();
@@ -354,36 +473,69 @@ test('five participants: simultaneous publishing, reciprocal watching and two re
         const context = canvas.getContext('2d')!;
         if (video.videoWidth) context.drawImage(video, 0, 0, 1, 1);
         const [red, , blue] = context.getImageData(0, 0, 1, 1).data;
-        return { color: red > 150 ? 'red' : blue > 150 ? 'blue' : 'none', playing: !video.paused };
+        return {
+          color: red > 150 ? 'red' : blue > 150 ? 'blue' : 'none',
+          playing: !video.paused,
+        };
       }),
     )
     .toEqual({ color: 'blue', playing: true });
-  await expect.poll(() => activeCounts(c)).toEqual({ sending: 0, receiving: 2, total: 2 });
-  await expect.poll(() => activeCounts(a)).toEqual({ sending: 4, receiving: 1, total: 5 });
-  await expect.poll(() => activeCounts(b)).toEqual({ sending: 2, receiving: 1, total: 3 });
+  await expect
+    .poll(() => activeCounts(c))
+    .toEqual({ sending: 0, receiving: 2, total: 2 });
+  await expect
+    .poll(() => activeCounts(a))
+    .toEqual({ sending: 4, receiving: 1, total: 5 });
+  await expect
+    .poll(() => activeCounts(b))
+    .toEqual({ sending: 2, receiving: 1, total: 3 });
 
   const streamGrid = c.locator('.remote-stream-grid');
   await expect(streamGrid).toHaveClass(/layout-rows/);
-  await c.getByRole('button', { name: 'Exibir transmissões lado a lado', exact: true }).click();
+  await c
+    .getByRole('button', {
+      name: 'Exibir transmissões lado a lado',
+      exact: true,
+    })
+    .click();
   await expect(streamGrid).toHaveClass(/layout-columns/);
-  await c.getByRole('button', { name: 'Empilhar transmissões', exact: true }).click();
+  await c
+    .getByRole('button', { name: 'Empilhar transmissões', exact: true })
+    .click();
   await expect(streamGrid).toHaveClass(/layout-rows/);
 
-  const sidebarToggle = c.getByRole('button', { name: 'Recolher painel de participantes', exact: true });
+  const sidebarToggle = c.getByRole('button', {
+    name: 'Recolher painel de participantes',
+    exact: true,
+  });
   await sidebarToggle.click();
   await expect(c.locator('#room-sidebar')).toHaveClass(/is-collapsed/);
-  await expect(c.getByRole('button', { name: 'Expandir painel de participantes', exact: true })).toHaveAttribute(
-    'aria-expanded',
-    'false',
-  );
-  await c.getByRole('button', { name: 'Expandir painel de participantes', exact: true }).click();
+  await expect(
+    c.getByRole('button', {
+      name: 'Expandir painel de participantes',
+      exact: true,
+    }),
+  ).toHaveAttribute('aria-expanded', 'false');
+  await c
+    .getByRole('button', {
+      name: 'Expandir painel de participantes',
+      exact: true,
+    })
+    .click();
   await expect(c.locator('#room-sidebar')).not.toHaveClass(/is-collapsed/);
 
   // Each live can be stopped independently while the other remains connected.
-  await c.getByRole('button', { name: 'Deixar de assistir', exact: true }).first().click();
+  await c
+    .getByRole('button', { name: 'Deixar de assistir', exact: true })
+    .first()
+    .click();
   await playing(c, 'blue', 0);
-  await expect.poll(() => activeCounts(c)).toEqual({ sending: 0, receiving: 1, total: 1 });
-  await expect.poll(() => activeCounts(a)).toEqual({ sending: 3, receiving: 1, total: 4 });
+  await expect
+    .poll(() => activeCounts(c))
+    .toEqual({ sending: 0, receiving: 1, total: 1 });
+  await expect
+    .poll(() => activeCounts(a))
+    .toEqual({ sending: 3, receiving: 1, total: 4 });
   // Native stop only ends B's publication, preserving B's reception of A.
   await b.evaluate(() => {
     const track = (window as unknown as TestWindow).testTrack;
@@ -395,10 +547,18 @@ test('five participants: simultaneous publishing, reciprocal watching and two re
   await shareButton(b).click();
   await choose(c, bName);
   await playing(c, 'blue', 0);
-  await viewers[2].getByRole('button', { name: 'Deixar de assistir', exact: true }).click();
+  await viewers[2]
+    .getByRole('button', { name: 'Deixar de assistir', exact: true })
+    .click();
   await cleared(viewers[2]);
-  await expect.poll(() => activeCounts(viewers[2])).toEqual({ sending: 0, receiving: 0, total: 0 });
-  expect(await viewers[2].evaluate(() => (window as unknown as TestWindow).testAutoPipHandler)).toBeNull();
+  await expect
+    .poll(() => activeCounts(viewers[2]))
+    .toEqual({ sending: 0, receiving: 0, total: 0 });
+  expect(
+    await viewers[2].evaluate(
+      () => (window as unknown as TestWindow).testAutoPipHandler,
+    ),
+  ).toBeNull();
   await a.close(); // Creator leaving does not close the room or B's stream.
   await expect(participantCount(b)).toHaveText('4');
   await cleared(b);
@@ -433,15 +593,21 @@ test('participant aliases replace the default name for everyone and survive reco
   await expect(b.getByText('Alice', { exact: true })).toBeVisible();
 
   await shareButton(a).click();
-  await expect(b.getByRole('button', { name: 'Assistir a Alice', exact: true })).toBeVisible();
-  await expect(b.getByRole('button', { name: /^Assistir a Participante / })).toHaveCount(0);
+  await expect(
+    b.getByRole('button', { name: 'Assistir a Alice', exact: true }),
+  ).toBeVisible();
+  await expect(
+    b.getByRole('button', { name: /^Assistir a Participante / }),
+  ).toHaveCount(0);
 
   // A can rename from settings and everyone sees the new name.
   await a.getByRole('button', { name: 'Configurações' }).click();
   await a.getByLabel('Alterar seu nome na sala').fill('Alicia');
   await a.getByRole('button', { name: 'Salvar', exact: true }).click();
   await expect(a.locator('[data-identity-name]')).toHaveText('Alicia');
-  await expect(b.getByRole('button', { name: 'Assistir a Alicia', exact: true })).toBeVisible();
+  await expect(
+    b.getByRole('button', { name: 'Assistir a Alicia', exact: true }),
+  ).toBeVisible();
 
   // The alias is stored locally and re-announced after a fresh session.
   await a.reload();
@@ -484,7 +650,11 @@ test('a single lost signaling socket reconnects on its own and resumes sharing a
   await dropSignaling(b);
   await expect(participantCount(b)).toHaveText('2');
   await playing(b, 'red', 1);
-  expect(await b.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');
+  expect(
+    await b.evaluate(
+      () => (window as unknown as TestWindow).testTrack.readyState,
+    ),
+  ).toBe('live');
   // A stayed connected and saw B leave; once B is back, A re-picks it in one click.
   await choose(a, bName);
   await playing(a, 'blue', 1);
@@ -511,7 +681,11 @@ test('a pure publisher whose socket drops keeps publishing to its viewer after r
   // back on its own and re-announce the same screen so B's view recovers.
   await dropSignaling(a);
   await expect(participantCount(a)).toHaveText('2');
-  expect(await a.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');
+  expect(
+    await a.evaluate(
+      () => (window as unknown as TestWindow).testTrack.readyState,
+    ),
+  ).toBe('live');
   await choose(b, aName);
   await playing(b, 'red', 1);
 });
@@ -522,7 +696,9 @@ test('a redeploy drops every socket at once and the room restores itself without
 }) => {
   await instrument(context);
   const errors: string[] = [];
-  context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
+  context.on('page', page =>
+    page.on('pageerror', error => errors.push(error.message)),
+  );
   a.on('pageerror', error => errors.push(error.message));
   await capture(a, '#ff0000');
   await a.goto('/');
@@ -546,8 +722,16 @@ test('a redeploy drops every socket at once and the room restores itself without
   await expect(participantCount(a)).toHaveText('2');
   await expect(participantCount(b)).toHaveText('2');
   // Both captures survived the reconnect, so nobody re-picks a screen.
-  expect(await a.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');
-  expect(await b.evaluate(() => (window as unknown as TestWindow).testTrack.readyState)).toBe('live');
+  expect(
+    await a.evaluate(
+      () => (window as unknown as TestWindow).testTrack.readyState,
+    ),
+  ).toBe('live');
+  expect(
+    await b.evaluate(
+      () => (window as unknown as TestWindow).testTrack.readyState,
+    ),
+  ).toBe('live');
   // Both streams resume without touching the picker.
   await playing(a, 'blue', 1);
   await playing(b, 'red', 1);

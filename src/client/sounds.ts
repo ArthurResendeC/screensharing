@@ -1,4 +1,10 @@
-type ToneName = 'connect' | 'disconnect' | 'share-start' | 'share-stop' | 'viewer-join' | 'viewer-leave';
+type ToneName =
+  | 'connect'
+  | 'disconnect'
+  | 'share-start'
+  | 'share-stop'
+  | 'viewer-join'
+  | 'viewer-leave';
 
 type Tone = {
   freqs: number[];
@@ -21,7 +27,9 @@ let ctx: AudioContext | null = null;
 
 function getContext(): AudioContext | null {
   const Ctor =
-    window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext })
+      .webkitAudioContext;
   if (!Ctor) return null;
   if (!ctx) ctx = new Ctor();
   if (ctx.state === 'suspended') void ctx.resume();

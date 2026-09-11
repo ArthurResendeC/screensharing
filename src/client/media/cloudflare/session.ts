@@ -12,7 +12,10 @@ export class FifoQueue {
 
 // O Cloudflare Realtime não usa trickle ICE: a SDP precisa levar os candidatos antes
 // de ser enviada. Resolve quando a coleta termina ou após o timeout.
-export function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 2000): Promise<void> {
+export function waitForIceGathering(
+  pc: RTCPeerConnection,
+  timeoutMs = 2000,
+): Promise<void> {
   if (pc.iceGatheringState === 'complete') return Promise.resolve();
   return new Promise(resolve => {
     const done = () => {
@@ -32,7 +35,10 @@ export function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 2000): Pr
 // que o publicador completou ICE/DTLS e está enviando pacotes — anunciar antes disso
 // leva a "Track not found on remote peer". Resolve no timeout (best effort);
 // rejeita se a conexão falhar.
-export function waitForConnected(pc: RTCPeerConnection, timeoutMs = 15_000): Promise<void> {
+export function waitForConnected(
+  pc: RTCPeerConnection,
+  timeoutMs = 15_000,
+): Promise<void> {
   const isUp = () =>
     pc.connectionState === 'connected' ||
     pc.iceConnectionState === 'connected' ||
@@ -48,7 +54,10 @@ export function waitForConnected(pc: RTCPeerConnection, timeoutMs = 15_000): Pro
       if (isUp()) {
         cleanup();
         resolve();
-      } else if (pc.connectionState === 'failed' || pc.iceConnectionState === 'failed') {
+      } else if (
+        pc.connectionState === 'failed' ||
+        pc.iceConnectionState === 'failed'
+      ) {
         cleanup();
         reject(new Error('media connection failed'));
       }

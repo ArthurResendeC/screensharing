@@ -27,8 +27,11 @@ export default defineConfig({
     env: {
       MEDIA_PROVIDER: 'cloudflare',
       CLOUDFLARE_REALTIME_APP_ID: process.env.CLOUDFLARE_REALTIME_APP_ID ?? '',
-      CLOUDFLARE_REALTIME_APP_SECRET: process.env.CLOUDFLARE_REALTIME_APP_SECRET ?? '',
-      ROOM_TOKEN_SECRET: process.env.ROOM_TOKEN_SECRET ?? 'e2e-room-token-secret-at-least-32-characters',
+      CLOUDFLARE_REALTIME_APP_SECRET:
+        process.env.CLOUDFLARE_REALTIME_APP_SECRET ?? '',
+      ROOM_TOKEN_SECRET:
+        process.env.ROOM_TOKEN_SECRET ??
+        'e2e-room-token-secret-at-least-32-characters',
     },
   },
 });

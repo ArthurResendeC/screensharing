@@ -13,7 +13,12 @@ const sdp = [
 ].join('\r\n');
 
 test('pins the video bitrate window without touching audio or duplicating params', () => {
-  configureRtc({ maxVideoBitrate: 15_000_000, minVideoBitrate: 2_500_000, startVideoBitrate: 8_000_000, turn: null });
+  configureRtc({
+    maxVideoBitrate: 15_000_000,
+    minVideoBitrate: 2_500_000,
+    startVideoBitrate: 8_000_000,
+    turn: null,
+  });
   const tuned = tuneVideoBitrate(tuneVideoBitrate(sdp));
   expect(tuned).toContain('a=fmtp:111 minptime=10;useinbandfec=1\r\n');
   expect(tuned).toContain(
@@ -26,7 +31,17 @@ test('pins the video bitrate window without touching audio or duplicating params
 });
 
 test('is a no-op when no bitrate hints are configured', () => {
-  configureRtc({ maxVideoBitrate: 0, minVideoBitrate: 0, startVideoBitrate: 0, turn: null });
+  configureRtc({
+    maxVideoBitrate: 0,
+    minVideoBitrate: 0,
+    startVideoBitrate: 0,
+    turn: null,
+  });
   expect(tuneVideoBitrate(sdp)).toBe(sdp);
-  configureRtc({ maxVideoBitrate: 15_000_000, minVideoBitrate: 2_500_000, startVideoBitrate: 8_000_000, turn: null });
+  configureRtc({
+    maxVideoBitrate: 15_000_000,
+    minVideoBitrate: 2_500_000,
+    startVideoBitrate: 8_000_000,
+    turn: null,
+  });
 });

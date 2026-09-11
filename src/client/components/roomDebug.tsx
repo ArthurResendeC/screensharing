@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { collectStats, type PeerStats, type Sample, type VideoStats } from '../../lib/webrtc/stats';
+import {
+  collectStats,
+  type PeerStats,
+  type Sample,
+  type VideoStats,
+} from '../../lib/webrtc/stats';
 import type { MediaProvider } from '../media/types';
 
 type Row = {
@@ -13,7 +18,11 @@ type Row = {
   stats: PeerStats;
 };
 
-type Finding = { area: 'Browser/encoder' | 'Rede/infra' | 'Receptor'; level: 'info' | 'warning'; text: string };
+type Finding = {
+  area: 'Browser/encoder' | 'Rede/infra' | 'Receptor';
+  level: 'info' | 'warning';
+  text: string;
+};
 type BrowserEnvironment = {
   browser: string;
   platform?: string;
@@ -29,13 +38,20 @@ type BrowserEnvironment = {
 type NavigatorDiagnostics = Navigator & {
   deviceMemory?: number;
   userAgentData?: { platform?: string };
-  connection?: { effectiveType?: string; downlink?: number; rtt?: number; saveData?: boolean };
+  connection?: {
+    effectiveType?: string;
+    downlink?: number;
+    rtt?: number;
+    saveData?: boolean;
+  };
 };
 
 const value = (number: number | undefined, suffix = '', digits = 0) =>
   number === undefined ? 'indisponível' : `${number.toFixed(digits)}${suffix}`;
-const bitrate = (number: number | undefined) => value(number === undefined ? undefined : number / 1e6, ' Mbps', 2);
-const bytes = (number: number | undefined) => value(number === undefined ? undefined : number / 1e6, ' MB', 1);
+const bitrate = (number: number | undefined) =>
+  value(number === undefined ? undefined : number / 1e6, ' Mbps', 2);
+const bytes = (number: number | undefined) =>
+  value(number === undefined ? undefined : number / 1e6, ' MB', 1);
 const percent = (number: number | undefined) => value(number, '%', 1);
 
 function browserEnvironment(): BrowserEnvironment {
@@ -48,7 +64,10 @@ function browserEnvironment(): BrowserEnvironment {
       | { UNMASKED_RENDERER_WEBGL: number }
       | null
       | undefined;
-    const renderer = gl && extension ? gl.getParameter(extension.UNMASKED_RENDERER_WEBGL) : undefined;
+    const renderer =
+      gl && extension
+        ? gl.getParameter(extension.UNMASKED_RENDERER_WEBGL)
+        : undefined;
     if (typeof renderer === 'string') gpu = renderer;
   } catch {
     // Some browsers intentionally hide renderer details for privacy.
@@ -70,8 +89,15 @@ function diagnose(row: Row): Finding[] {
   const findings: Finding[] = [];
   const { network, capture, video } = row.stats;
   if (row.connectionState !== 'connected')
-    findings.push({ area: 'Rede/infra', level: 'warning', text: `Conexão WebRTC em ${row.connectionState}.` });
-  if (network?.localCandidateType === 'relay' || network?.remoteCandidateType === 'relay')
+    findings.push({
+      area: 'Rede/infra',
+      level: 'warning',
+      text: `Conexão WebRTC em ${row.connectionState}.`,
+    });
+  if (
+    network?.localCandidateType === 'relay' ||
+    network?.remoteCandidateType === 'relay'
+  )
     findings.push({
       area: 'Rede/infra',
       level: 'info',
@@ -110,7 +136,10 @@ function diagnose(row: Row): Finding[] {
         level: 'warning',
         text: 'O próprio navegador informa limitação por CPU; isso também pode incluir o pipeline de GPU/encoder.',
       });
-    if (item.direction === 'Enviado' && item.qualityLimitationReason === 'bandwidth')
+    if (
+      item.direction === 'Enviado' &&
+      item.qualityLimitationReason === 'bandwidth'
+    )
       findings.push({
         area: 'Rede/infra',
         level: 'warning',
@@ -127,7 +156,11 @@ function diagnose(row: Row): Finding[] {
         level: 'warning',
         text: `A captura entrega ${capture.fps.toFixed(0)} FPS, mas o encoder envia ${item.fps.toFixed(0)} FPS.`,
       });
-    if (item.fps && item.frameProcessingMs !== undefined && item.frameProcessingMs > (1000 / item.fps) * 0.8)
+    if (
+      item.fps &&
+      item.frameProcessingMs !== undefined &&
+      item.frameProcessingMs > (1000 / item.fps) * 0.8
+    )
       findings.push({
         area: item.direction === 'Enviado' ? 'Browser/encoder' : 'Receptor',
         level: 'warning',
@@ -170,29 +203,42 @@ function VideoMetrics({ video }: { video: VideoStats }) {
       </strong>
       <span>Perda na amostra / total</span>
       <strong>
-        {percent(video.packetLossPercent)} / {video.packetsLost ?? 'indisponível'} pacotes
+        {percent(video.packetLossPercent)} /{' '}
+        {video.packetsLost ?? 'indisponível'} pacotes
       </strong>
       <span>RTT (latência) / jitter</span>
       <strong>
-        {value(video.roundTripTimeMs, ' ms', 1)} / {value(video.jitterMs, ' ms', 1)}
+        {value(video.roundTripTimeMs, ' ms', 1)} /{' '}
+        {value(video.jitterMs, ' ms', 1)}
       </strong>
       <span>Tempo por frame</span>
       <strong>{value(video.frameProcessingMs, ' ms', 2)}</strong>
       <span>Frames processados / descartados</span>
       <strong>
-        {video.frames ?? 'indisponível'} / {video.framesDropped ?? 'indisponível'}
+        {video.frames ?? 'indisponível'} /{' '}
+        {video.framesDropped ?? 'indisponível'}
       </strong>
       <span>Retransmitidos · NACK · PLI · FIR</span>
       <strong>
-        {video.retransmittedPackets ?? '?'} · {video.nackCount ?? '?'} · {video.pliCount ?? '?'} ·{' '}
-        {video.firCount ?? '?'}
+        {video.retransmittedPackets ?? '?'} · {video.nackCount ?? '?'} ·{' '}
+        {video.pliCount ?? '?'} · {video.firCount ?? '?'}
       </strong>
       <span>Codec</span>
-      <strong title={video.codecParameters}>{video.codec ?? 'indisponível'}</strong>
+      <strong title={video.codecParameters}>
+        {video.codec ?? 'indisponível'}
+      </strong>
       <span>{video.direction === 'Enviado' ? 'Encoder' : 'Decoder'}</span>
-      <strong>{video.encoder ?? video.decoder ?? 'não exposto pelo browser'}</strong>
+      <strong>
+        {video.encoder ?? video.decoder ?? 'não exposto pelo browser'}
+      </strong>
       <span>Aceleração eficiente</span>
-      <strong>{video.powerEfficient === undefined ? 'não exposta' : video.powerEfficient ? 'sim' : 'não'}</strong>
+      <strong>
+        {video.powerEfficient === undefined
+          ? 'não exposta'
+          : video.powerEfficient
+            ? 'sim'
+            : 'não'}
+      </strong>
       {video.direction === 'Enviado' && (
         <>
           <span>Limitador de qualidade</span>
@@ -203,11 +249,20 @@ function VideoMetrics({ video }: { video: VideoStats }) {
   );
 }
 
-export function RoomDebug({ controller, socketState }: { controller: MediaProvider; socketState: string }) {
+export function RoomDebug({
+  controller,
+  socketState,
+}: {
+  controller: MediaProvider;
+  socketState: string;
+}) {
   const [rows, setRows] = useState<Row[]>([]);
   const [environment] = useState(browserEnvironment);
   const samples = useRef(new Map<RTCPeerConnection, Map<string, Sample>>());
-  const capabilities = RTCRtpSender.getCapabilities?.('video')?.codecs.map(codec => codec.mimeType) ?? [];
+  const capabilities =
+    RTCRtpSender.getCapabilities?.('video')?.codecs.map(
+      codec => codec.mimeType,
+    ) ?? [];
 
   useEffect(() => {
     let active = true;
@@ -215,7 +270,8 @@ export function RoomDebug({ controller, socketState }: { controller: MediaProvid
       const peers = controller.getPeers();
       const entries = [...(peers?.peers.entries() ?? [])];
       for (const pc of samples.current.keys())
-        if (!entries.some(([, entry]) => entry.pc === pc)) samples.current.delete(pc);
+        if (!entries.some(([, entry]) => entry.pc === pc))
+          samples.current.delete(pc);
       const next: Row[] = [];
       for (const [id, { pc, peerId, direction }] of entries) {
         if (!samples.current.has(pc)) samples.current.set(pc, new Map());
@@ -248,8 +304,9 @@ export function RoomDebug({ controller, socketState }: { controller: MediaProvid
   return (
     <div className="debug-content">
       <p className="debug-note">
-        Atualização a cada 2 s. CPU/GPU não expõem utilização direta: os diagnósticos usam sinais do pipeline WebRTC e
-        devem ser tratados como indícios.
+        Atualização a cada 2 s. CPU/GPU não expõem utilização direta: os
+        diagnósticos usam sinais do pipeline WebRTC e devem ser tratados como
+        indícios.
       </p>
       <details open>
         <summary>Ambiente local</summary>
@@ -260,26 +317,32 @@ export function RoomDebug({ controller, socketState }: { controller: MediaProvid
           <strong>{environment.platform || 'indisponível'}</strong>
           <span>CPU lógica / memória</span>
           <strong>
-            {environment.logicalProcessors ?? '?'} threads / {value(environment.memoryGb, ' GB')}
+            {environment.logicalProcessors ?? '?'} threads /{' '}
+            {value(environment.memoryGb, ' GB')}
           </strong>
           <span>GPU/renderizador</span>
           <strong>{environment.gpu ?? 'ocultado pelo browser'}</strong>
           <span>Rede estimada pelo browser</span>
           <strong>
-            {environment.effectiveConnection ?? '?'} · {value(environment.estimatedDownlinkMbps, ' Mbps', 1)} · RTT{' '}
+            {environment.effectiveConnection ?? '?'} ·{' '}
+            {value(environment.estimatedDownlinkMbps, ' Mbps', 1)} · RTT{' '}
             {value(environment.estimatedRttMs, ' ms')}
             {environment.dataSaver ? ' · economia de dados ativa' : ''}
           </strong>
           <span>User agent</span>
           <strong>{environment.browser}</strong>
           <span>Codecs disponíveis</span>
-          <strong>{[...new Set(capabilities)].join(', ') || 'indisponível'}</strong>
+          <strong>
+            {[...new Set(capabilities)].join(', ') || 'indisponível'}
+          </strong>
         </div>
       </details>
       {controller.getPeers() === null ? (
         <p>
-          O transporte de mídia é gerenciado pelo servidor de mídia. Para estatísticas RTP detalhadas, use
-          <code> chrome://webrtc-internals</code> ou <code>about:webrtc</code> no navegador.
+          O transporte de mídia é gerenciado pelo servidor de mídia. Para
+          estatísticas RTP detalhadas, use
+          <code> chrome://webrtc-internals</code> ou <code>about:webrtc</code>{' '}
+          no navegador.
         </p>
       ) : (
         !rows.length && <p>Nenhuma conexão de mídia ativa.</p>
@@ -289,7 +352,8 @@ export function RoomDebug({ controller, socketState }: { controller: MediaProvid
         return (
           <section className="debug-peer" key={row.id}>
             <h3>
-              {row.direction === 'send' ? 'Envio para' : 'Recebimento de'} {controller.nameOf(row.peerId)}
+              {row.direction === 'send' ? 'Envio para' : 'Recebimento de'}{' '}
+              {controller.nameOf(row.peerId)}
             </h3>
             <div className="debug-findings">
               {diagnose(row).map((finding, index) => (
@@ -303,25 +367,34 @@ export function RoomDebug({ controller, socketState }: { controller: MediaProvid
               <div className="debug-metrics">
                 <span>Estados conexão / ICE / signaling</span>
                 <strong>
-                  {row.connectionState} / {row.iceConnectionState} / {row.signalingState}
+                  {row.connectionState} / {row.iceConnectionState} /{' '}
+                  {row.signalingState}
                 </strong>
                 <span>Coleta ICE</span>
                 <strong>{row.iceGatheringState}</strong>
                 <span>Protocolo / rede</span>
                 <strong>
-                  {network?.protocol?.toUpperCase() ?? '?'} / {network?.networkType ?? '?'}
-                  {network?.relayProtocol ? ` / relay ${network.relayProtocol}` : ''}
+                  {network?.protocol?.toUpperCase() ?? '?'} /{' '}
+                  {network?.networkType ?? '?'}
+                  {network?.relayProtocol
+                    ? ` / relay ${network.relayProtocol}`
+                    : ''}
                 </strong>
                 <span>Candidatos local → remoto</span>
                 <strong>
-                  {network?.localCandidateType ?? '?'} ({network?.localAddress ?? '?'}) →{' '}
-                  {network?.remoteCandidateType ?? '?'} ({network?.remoteAddress ?? '?'})
+                  {network?.localCandidateType ?? '?'} (
+                  {network?.localAddress ?? '?'}) →{' '}
+                  {network?.remoteCandidateType ?? '?'} (
+                  {network?.remoteAddress ?? '?'})
                 </strong>
                 <span>RTT atual</span>
-                <strong>{value(network?.currentRoundTripTimeMs, ' ms', 1)}</strong>
+                <strong>
+                  {value(network?.currentRoundTripTimeMs, ' ms', 1)}
+                </strong>
                 <span>Banda estimada saída / entrada</span>
                 <strong>
-                  {bitrate(network?.availableOutgoingBitrate)} / {bitrate(network?.availableIncomingBitrate)}
+                  {bitrate(network?.availableOutgoingBitrate)} /{' '}
+                  {bitrate(network?.availableIncomingBitrate)}
                 </strong>
                 <span>Tráfego acumulado saída / entrada</span>
                 <strong>
@@ -331,7 +404,8 @@ export function RoomDebug({ controller, socketState }: { controller: MediaProvid
             </details>
             {capture && (
               <p>
-                Captura antes do encoder: {capture.width ?? '?'} × {capture.height ?? '?'} · {capture.fps ?? '?'} FPS ·{' '}
+                Captura antes do encoder: {capture.width ?? '?'} ×{' '}
+                {capture.height ?? '?'} · {capture.fps ?? '?'} FPS ·{' '}
                 {capture.frames ?? '?'} frames
               </p>
             )}

@@ -18,7 +18,9 @@ export class TokenRateLimiter {
     const fresh: Bucket = { count: 0, resetAt: now + WINDOW_MS };
     this.buckets.set(key, fresh);
     // Oportunisticamente descarta janelas expiradas para o mapa não crescer sem limite.
-    if (this.buckets.size > 5000) for (const [k, b] of this.buckets) if (b.resetAt <= now) this.buckets.delete(k);
+    if (this.buckets.size > 5000)
+      for (const [k, b] of this.buckets)
+        if (b.resetAt <= now) this.buckets.delete(k);
     return fresh;
   }
 
@@ -32,7 +34,10 @@ export class TokenRateLimiter {
 }
 
 export function clientKey(request: Request, roomId: string): string {
-  const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+  const forwarded = request.headers
+    .get('x-forwarded-for')
+    ?.split(',')[0]
+    ?.trim();
   const ip = forwarded || request.headers.get('x-real-ip')?.trim() || 'unknown';
   return `${ip}\0${roomId}`;
 }

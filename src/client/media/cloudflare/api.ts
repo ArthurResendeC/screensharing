@@ -1,9 +1,14 @@
 import { z } from 'zod';
-import { roomCredentialSchema, roomIdSchema } from '../../../lib/signaling/messages';
+import {
+  roomCredentialSchema,
+  roomIdSchema,
+} from '../../../lib/signaling/messages';
 
 // Respostas do proxy /realtime/* (que repassa o SFU Cloudflare Realtime). O App
 // Secret fica no servidor; o cliente só fala com a mesma origem.
-const sdpSchema = z.object({ type: z.enum(['offer', 'answer']), sdp: z.string().min(1) }).strict();
+const sdpSchema = z
+  .object({ type: z.enum(['offer', 'answer']), sdp: z.string().min(1) })
+  .strict();
 
 const iceServerSchema = z
   .object({
@@ -66,10 +71,19 @@ export class RealtimeError extends Error {
 }
 
 const accessReasonSchema = z.object({
-  reason: z.enum(['invalid-invite', 'password-required', 'wrong-password', 'too-many-attempts']),
+  reason: z.enum([
+    'invalid-invite',
+    'password-required',
+    'wrong-password',
+    'too-many-attempts',
+  ]),
 });
 
-async function send(method: 'POST' | 'PUT', path: string, body: unknown): Promise<Response> {
+async function send(
+  method: 'POST' | 'PUT',
+  path: string,
+  body: unknown,
+): Promise<Response> {
   try {
     return await fetch(new URL(path, location.href), {
       method,
@@ -83,7 +97,8 @@ async function send(method: 'POST' | 'PUT', path: string, body: unknown): Promis
 }
 
 function fail(response: Response): never {
-  if (response.status === 429) throw new RealtimeError('too-many-attempts', 429);
+  if (response.status === 429)
+    throw new RealtimeError('too-many-attempts', 429);
   // The SFU GCs a session after ~30s with no media; the caller re-establishes.
   if (response.status === 404) throw new RealtimeError('session-gone', 404);
   throw new RealtimeError('unavailable', response.status);
@@ -95,7 +110,9 @@ export async function createRealtimeSession(params: {
   password?: string;
   accessToken?: string;
 }): Promise<RealtimeSession> {
-  const parsed = z.object({ roomId: roomIdSchema, credential: roomCredentialSchema }).safeParse(params);
+  const parsed = z
+    .object({ roomId: roomIdSchema, credential: roomCredentialSchema })
+    .safeParse(params);
   if (!parsed.success) throw new RealtimeError('invalid-invite', 400);
 
   const response = await send('POST', '/realtime/session', {
@@ -106,8 +123,13 @@ export async function createRealtimeSession(params: {
   });
   if (!response.ok) {
     if (response.status === 403) {
-      const body = accessReasonSchema.safeParse(await response.json().catch(() => null));
-      throw new RealtimeError(body.success ? body.data.reason : 'invalid-invite', 403);
+      const body = accessReasonSchema.safeParse(
+        await response.json().catch(() => null),
+      );
+      throw new RealtimeError(
+        body.success ? body.data.reason : 'invalid-invite',
+        403,
+      );
     }
     fail(response);
   }
@@ -118,20 +140,36 @@ export async function createRealtimeSession(params: {
 
 export async function realtimeTracksNew(
   ticket: string,
-  body: { sessionDescription?: RTCSessionDescriptionInit; tracks: TrackRequest[] },
+  body: {
+    sessionDescription?: RTCSessionDescriptionInit;
+    tracks: TrackRequest[];
+  },
 ): Promise<TracksResponse> {
   const response = await send('POST', '/realtime/tracks/new', {
     ticket,
-    ...(body.sessionDescription ? { sessionDescription: { type: 'offer', sdp: body.sessionDescription.sdp } } : {}),
+    ...(body.sessionDescription
+      ? {
+          sessionDescription: {
+            type: 'offer',
+            sdp: body.sessionDescription.sdp,
+          },
+        }
+      : {}),
     tracks: body.tracks,
   });
   if (!response.ok) fail(response);
-  const data = tracksResponseSchema.safeParse(await response.json().catch(() => null));
-  if (!data.success || data.data.errorCode) throw new RealtimeError('unavailable', response.status);
+  const data = tracksResponseSchema.safeParse(
+    await response.json().catch(() => null),
+  );
+  if (!data.success || data.data.errorCode)
+    throw new RealtimeError('unavailable', response.status);
   return data.data;
 }
 
-export async function realtimeRenegotiate(ticket: string, answer: RTCSessionDescriptionInit): Promise<void> {
+export async function realtimeRenegotiate(
+  ticket: string,
+  answer: RTCSessionDescriptionInit,
+): Promise<void> {
   const response = await send('PUT', '/realtime/renegotiate', {
     ticket,
     sessionDescription: { type: 'answer', sdp: answer.sdp },
@@ -139,7 +177,10 @@ export async function realtimeRenegotiate(ticket: string, answer: RTCSessionDesc
   if (!response.ok) fail(response);
 }
 
-export async function realtimeTracksClose(ticket: string, mids: string[]): Promise<void> {
+export async function realtimeTracksClose(
+  ticket: string,
+  mids: string[],
+): Promise<void> {
   if (!mids.length) return;
   const response = await send('PUT', '/realtime/tracks/close', {
     ticket,

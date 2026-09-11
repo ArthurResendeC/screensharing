@@ -1,7 +1,11 @@
 import type { CSSProperties } from 'react';
 import type { Participant } from '../../lib/signaling/messages';
 import { MAX_WATCHED_STREAMS } from '../../lib/signaling/messages';
-import { avatarColor, displayName, initialsOf } from '../participantPresentation';
+import {
+  avatarColor,
+  displayName,
+  initialsOf,
+} from '../participantPresentation';
 import { ScreenIcon } from './icons';
 
 type SelectionProps = {
@@ -20,27 +24,41 @@ function PlayIcon() {
   );
 }
 
-export function ParticipantList({ members, selfId, selectedIds, connected, onWatch }: SelectionProps) {
+export function ParticipantList({
+  members,
+  selfId,
+  selectedIds,
+  connected,
+  onWatch,
+}: SelectionProps) {
   return members.map(member => {
     const isSelf = member.peerId === selfId;
     const isSelected = selectedIds.includes(member.peerId);
     const canWatch = member.sharing && !isSelf;
     const name = displayName(member);
     return (
-      <li key={member.peerId} className={`member${canWatch ? ' is-live' : ''}${isSelected ? ' is-selected' : ''}`}>
+      <li
+        key={member.peerId}
+        className={`member${canWatch ? ' is-live' : ''}${isSelected ? ' is-selected' : ''}`}
+      >
         <div className="avatar" style={{ background: avatarColor(name) }}>
           {initialsOf(name)}
           <div className={`dot${member.sharing ? ' is-live' : ''}`} />
         </div>
         <div className="info">
           <span className="name">{name}</span>
-          <span className="status">{member.sharing ? 'Transmitindo' : 'Sem transmissão'}</span>
+          <span className="status">
+            {member.sharing ? 'Transmitindo' : 'Sem transmissão'}
+          </span>
         </div>
         {canWatch && (
           <button
             type="button"
             className="watch-btn"
-            disabled={!connected || (!isSelected && selectedIds.length >= MAX_WATCHED_STREAMS)}
+            disabled={
+              !connected ||
+              (!isSelected && selectedIds.length >= MAX_WATCHED_STREAMS)
+            }
             aria-pressed={isSelected}
             title={`${isSelected ? 'Reconectar a' : 'Assistir a'} ${name}`}
             onClick={() => onWatch(member.peerId)}
@@ -53,11 +71,22 @@ export function ParticipantList({ members, selfId, selectedIds, connected, onWat
   });
 }
 
-export function ScreenPicker({ members, selfId, selectedIds, connected, onWatch }: SelectionProps) {
-  const live = members.filter(member => member.sharing && member.peerId !== selfId);
+export function ScreenPicker({
+  members,
+  selfId,
+  selectedIds,
+  connected,
+  onWatch,
+}: SelectionProps) {
+  const live = members.filter(
+    member => member.sharing && member.peerId !== selfId,
+  );
   const columns = Math.ceil(Math.sqrt(live.length)) || 1;
   const rows = Math.ceil(live.length / columns) || 1;
-  const style = { '--picker-columns': columns, '--picker-rows': rows } as CSSProperties;
+  const style = {
+    '--picker-columns': columns,
+    '--picker-rows': rows,
+  } as CSSProperties;
   return (
     <div className="screen-picker-grid" style={style}>
       {live.map(member => {
@@ -68,12 +97,20 @@ export function ScreenPicker({ members, selfId, selectedIds, connected, onWatch 
             key={member.peerId}
             type="button"
             className={`screen-tile${selected ? ' is-selected' : ''}`}
-            disabled={!connected || (!selected && selectedIds.length >= MAX_WATCHED_STREAMS)}
+            disabled={
+              !connected ||
+              (!selected && selectedIds.length >= MAX_WATCHED_STREAMS)
+            }
             onClick={() => onWatch(member.peerId)}
           >
-            <div className="screen-tile-thumb" style={{ background: `${avatarColor(name)}22` }}>
+            <div
+              className="screen-tile-thumb"
+              style={{ background: `${avatarColor(name)}22` }}
+            >
               <div className="screen-tile-overlay">
-                <span className={`screen-tile-cta${selected ? ' is-current' : ''}`}>
+                <span
+                  className={`screen-tile-cta${selected ? ' is-current' : ''}`}
+                >
                   {selected ? (
                     '✓ Assistindo'
                   ) : (
@@ -95,21 +132,34 @@ export function ScreenPicker({ members, selfId, selectedIds, connected, onWatch 
   );
 }
 
-export function WatcherList({ watcherIds, nameOf }: { watcherIds: string[]; nameOf: (peerId: string) => string }) {
+export function WatcherList({
+  watcherIds,
+  nameOf,
+}: {
+  watcherIds: string[];
+  nameOf: (peerId: string) => string;
+}) {
   return (
     <>
       <div className="watchers-stack">
         {watcherIds.map(peerId => {
           const name = nameOf(peerId);
           return (
-            <div key={peerId} className="watcher-avatar" title={name} style={{ background: avatarColor(name) }}>
+            <div
+              key={peerId}
+              className="watcher-avatar"
+              title={name}
+              style={{ background: avatarColor(name) }}
+            >
               {initialsOf(name)}
             </div>
           );
         })}
       </div>
       <span className="watchers-label">
-        {watcherIds.length === 0 ? 'Ninguém assistindo ainda' : `Assistindo à sua tela (${watcherIds.length})`}
+        {watcherIds.length === 0
+          ? 'Ninguém assistindo ainda'
+          : `Assistindo à sua tela (${watcherIds.length})`}
       </span>
     </>
   );

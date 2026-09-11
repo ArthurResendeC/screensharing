@@ -1,6 +1,10 @@
 import type { ClientMessage, PeerSignal } from '../signaling/messages';
 import { setVideoCodecPreference, type VideoCodecPreference } from './codecs';
-import { MAX_VIDEO_BITRATE, VIDEO_DEGRADATION_PREFERENCE, rtcConfiguration } from './rtcConfiguration';
+import {
+  MAX_VIDEO_BITRATE,
+  VIDEO_DEGRADATION_PREFERENCE,
+  rtcConfiguration,
+} from './rtcConfiguration';
 import { tuneVideoBitrate } from './sdp';
 
 type Entry = {
@@ -17,14 +21,22 @@ export class Peers {
   readonly peers = new Map<string, Entry>();
   constructor(
     private send: (message: ClientMessage) => void,
-    private onStream: (sessionId: string, peerId: string, stream: MediaStream | null) => void,
+    private onStream: (
+      sessionId: string,
+      peerId: string,
+      stream: MediaStream | null,
+    ) => void,
     private onChange: () => void,
     private onError: (error: unknown) => void,
   ) {}
   private current(entry: Entry) {
     return this.peers.get(entry.sessionId) === entry;
   }
-  private createPeerConnection(peerId: string, sessionId: string, direction: Entry['direction']) {
+  private createPeerConnection(
+    peerId: string,
+    sessionId: string,
+    direction: Entry['direction'],
+  ) {
     this.removeSession(sessionId);
     const pc = new RTCPeerConnection(rtcConfiguration);
     const entry: Entry = { pc, peerId, sessionId, direction, candidates: [] };
@@ -45,7 +57,8 @@ export class Peers {
     pc.ontrack = ({ track, streams }) => {
       if (!this.current(entry) || direction !== 'receive') return;
       entry.remoteStream ??= streams[0] ?? new MediaStream();
-      if (!entry.remoteStream.getTracks().includes(track)) entry.remoteStream.addTrack(track);
+      if (!entry.remoteStream.getTracks().includes(track))
+        entry.remoteStream.addTrack(track);
       this.onStream(entry.sessionId, entry.peerId, entry.remoteStream);
     };
     pc.onconnectionstatechange =
@@ -60,16 +73,26 @@ export class Peers {
     // Create before sending watch: ICE can precede the offer, but never the selection.
     if (peerId) this.createPeerConnection(peerId, sessionId, 'receive');
   }
-  async offer(peerId: string, sessionId: string, stream: MediaStream, codecPreference: VideoCodecPreference = 'auto') {
+  async offer(
+    peerId: string,
+    sessionId: string,
+    stream: MediaStream,
+    codecPreference: VideoCodecPreference = 'auto',
+  ) {
     const entry = this.createPeerConnection(peerId, sessionId, 'send');
     try {
       for (const track of stream.getTracks()) entry.pc.addTrack(track, stream);
       // Every subscription has exactly one offerer, including reciprocal viewing.
       for (const transceiver of entry.pc.getTransceivers()) {
         transceiver.direction = 'sendonly';
-        if (transceiver.sender.track?.kind === 'video' && !setVideoCodecPreference(transceiver, codecPreference))
+        if (
+          transceiver.sender.track?.kind === 'video' &&
+          !setVideoCodecPreference(transceiver, codecPreference)
+        )
           this.onError(
-            new Error('O navegador não aplicou o codec preferido; a transmissão usará a negociação automática.'),
+            new Error(
+              'O navegador não aplicou o codec preferido; a transmissão usará a negociação automática.',
+            ),
           );
       }
       const offer = await entry.pc.createOffer();
@@ -104,7 +127,8 @@ export class Peers {
       const { pc } = entry;
       if (message.type === 'ice-candidate') {
         if (pc.remoteDescription) await pc.addIceCandidate(message.candidate);
-        else if (entry.candidates.length < 128) entry.candidates.push(message.candidate);
+        else if (entry.candidates.length < 128)
+          entry.candidates.push(message.candidate);
         return;
       }
       if (message.type === 'offer') {
@@ -125,8 +149,15 @@ export class Peers {
           });
         return;
       }
-      if (entry.direction !== 'send' || pc.signalingState !== 'have-local-offer') return;
-      await pc.setRemoteDescription({ type: 'answer', sdp: tuneVideoBitrate(message.sdp.sdp) });
+      if (
+        entry.direction !== 'send' ||
+        pc.signalingState !== 'have-local-offer'
+      )
+        return;
+      await pc.setRemoteDescription({
+        type: 'answer',
+        sdp: tuneVideoBitrate(message.sdp.sdp),
+      });
       if (!this.current(entry)) return;
       await this.flush(entry);
       if (this.current(entry)) await this.applyEncodeParameters(entry);
@@ -146,19 +177,24 @@ export class Peers {
       const parameters = sender.getParameters();
       if (!parameters.encodings?.length) continue;
       parameters.degradationPreference = VIDEO_DEGRADATION_PREFERENCE;
-      if (MAX_VIDEO_BITRATE) for (const encoding of parameters.encodings) encoding.maxBitrate = MAX_VIDEO_BITRATE;
+      if (MAX_VIDEO_BITRATE)
+        for (const encoding of parameters.encodings)
+          encoding.maxBitrate = MAX_VIDEO_BITRATE;
       try {
         await sender.setParameters(parameters);
       } catch {
         if (this.current(entry))
           this.onError(
-            new Error('O navegador não aplicou as preferências opcionais de codificação; a transmissão continua.'),
+            new Error(
+              'O navegador não aplicou as preferências opcionais de codificação; a transmissão continua.',
+            ),
           );
       }
     }
   }
   async reapplyEncodeParameters() {
-    for (const entry of this.peers.values()) if (entry.direction === 'send') await this.applyEncodeParameters(entry);
+    for (const entry of this.peers.values())
+      if (entry.direction === 'send') await this.applyEncodeParameters(entry);
   }
   removeSession(sessionId: string) {
     const entry = this.peers.get(sessionId);
@@ -174,14 +210,17 @@ export class Peers {
         null;
     for (const receiver of entry.pc.getReceivers()) receiver.track?.stop();
     entry.pc.close();
-    if (entry.direction === 'receive') this.onStream(entry.sessionId, entry.peerId, null);
+    if (entry.direction === 'receive')
+      this.onStream(entry.sessionId, entry.peerId, null);
     this.onChange();
   }
   removePeer(peerId: string) {
-    for (const entry of this.peers.values()) if (entry.peerId === peerId) this.removeSession(entry.sessionId);
+    for (const entry of this.peers.values())
+      if (entry.peerId === peerId) this.removeSession(entry.sessionId);
   }
   closeDirection(direction: Entry['direction']) {
-    for (const entry of this.peers.values()) if (entry.direction === direction) this.removeSession(entry.sessionId);
+    for (const entry of this.peers.values())
+      if (entry.direction === direction) this.removeSession(entry.sessionId);
   }
   closeAllPeers() {
     for (const sessionId of this.peers.keys()) this.removeSession(sessionId);

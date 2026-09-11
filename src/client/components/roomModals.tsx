@@ -1,10 +1,19 @@
 import React, { useEffect, useState, type ReactNode } from 'react';
-import { ALIAS_MAX_LENGTH, ROOM_PASSWORD_MAX_LENGTH } from '../../lib/signaling/messages';
+import {
+  ALIAS_MAX_LENGTH,
+  ROOM_PASSWORD_MAX_LENGTH,
+} from '../../lib/signaling/messages';
 import type { MediaProvider } from '../media/types';
 import type { ScreenShareState } from '../screenShare';
 import { CloseIcon, EndedIcon, EyeIcon, ScreenIcon } from './icons';
 
-export function NameGate({ state, controller }: { state: ScreenShareState; controller: MediaProvider }) {
+export function NameGate({
+  state,
+  controller,
+}: {
+  state: ScreenShareState;
+  controller: MediaProvider;
+}) {
   const [open, setOpen] = useState(!state.alias);
   const submit = (event: React.SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -27,7 +36,9 @@ export function NameGate({ state, controller }: { state: ScreenShareState; contr
           defaultValue={state.alias}
           maxLength={ALIAS_MAX_LENGTH}
           autoComplete="nickname"
-          placeholder={state.selfId ? controller.nameOf(state.selfId) : 'Seu nome'}
+          placeholder={
+            state.selfId ? controller.nameOf(state.selfId) : 'Seu nome'
+          }
         />
         <button type="submit" className="btn btn-primary">
           Entrar na sala
@@ -117,17 +128,34 @@ export function RoomPasswordGate({
   );
 }
 
-export function JoinErrorModal({ message, onRetry }: { message: string; onRetry: () => void }) {
+export function JoinErrorModal({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
   if (!message) return null;
   const isFull = /cheia/i.test(message);
   return (
     <div className="modal-overlay">
-      <div className="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="join-error-title">
+      <div
+        className="modal-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="join-error-title"
+      >
         <div className="icon">
           <EndedIcon />
         </div>
-        <h2 id="join-error-title">{isFull ? 'Sala cheia' : 'Não foi possível entrar'}</h2>
-        <p>{isFull ? `${message} Aguarde alguém sair ou peça um novo convite.` : message}</p>
+        <h2 id="join-error-title">
+          {isFull ? 'Sala cheia' : 'Não foi possível entrar'}
+        </h2>
+        <p>
+          {isFull
+            ? `${message} Aguarde alguém sair ou peça um novo convite.`
+            : message}
+        </p>
         <div className="modal-actions">
           <a className="btn btn-primary" href="/">
             Voltar ao início
@@ -141,7 +169,15 @@ export function JoinErrorModal({ message, onRetry }: { message: string; onRetry:
   );
 }
 
-export function DebugModal({ open, onClose, children }: { open: boolean; onClose: () => void; children: ReactNode }) {
+export function DebugModal({
+  open,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  children: ReactNode;
+}) {
   useEffect(() => {
     if (!open) return;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -158,10 +194,20 @@ export function DebugModal({ open, onClose, children }: { open: boolean; onClose
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="modal-card modal-card-wide" role="dialog" aria-modal="true" aria-labelledby="debug-modal-title">
+      <div
+        className="modal-card modal-card-wide"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="debug-modal-title"
+      >
         <div className="modal-card-header">
           <h2 id="debug-modal-title">Debug WebRTC</h2>
-          <button type="button" className="btn-icon" title="Fechar" onClick={onClose}>
+          <button
+            type="button"
+            className="btn-icon"
+            title="Fechar"
+            onClick={onClose}
+          >
             <CloseIcon />
           </button>
         </div>
