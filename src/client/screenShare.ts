@@ -6,6 +6,11 @@ import {
   type ServerMessage,
 } from '../lib/signaling/messages';
 import {
+  type AudioProfile,
+  setAudioProfile as applyAudioProfile,
+  setAudioSending,
+} from '../lib/webrtc/audio';
+import {
   normalizeVideoCodecPreference,
   type VideoCodecPreference,
 } from '../lib/webrtc/codecs';
@@ -15,12 +20,26 @@ import {
   type VideoDegradation,
 } from '../lib/webrtc/rtcConfiguration';
 import {
+  type AudioSource,
+  captureAudioInput,
+  describeShareAudio,
+  displayMediaConstraints,
+  listAudioInputs,
+  usesAudioInput,
+} from './media/audioCapture';
+import {
   CAPTURE_PRESETS,
   persistAlias,
+  persistAudioDeviceId,
+  persistAudioProfile,
+  persistAudioSource,
   persistCaptureQuality,
   persistCodecPreference,
   persistDegradation,
   storedAlias,
+  storedAudioDeviceId,
+  storedAudioProfile,
+  storedAudioSource,
   storedCaptureQuality,
   storedCodecPreference,
   storedDegradation,
@@ -96,6 +115,12 @@ export class ScreenShareController implements MediaProvider {
     degradation: storedDegradation(),
     captureQuality: storedCaptureQuality(),
     codecPreference: storedCodecPreference(),
+    audioSource: storedAudioSource(),
+    audioProfile: storedAudioProfile(),
+    audioDeviceId: storedAudioDeviceId(),
+    audioInputs: [],
+    audioMuted: false,
+    audioLive: false,
     inviteCopied: false,
   };
 
@@ -124,6 +149,8 @@ export class ScreenShareController implements MediaProvider {
     this.disposed = false;
     unlockSounds();
     setVideoDegradation(this.state.degradation);
+    applyAudioProfile(this.state.audioProfile);
+    setAudioSending(false);
     document.addEventListener('visibilitychange', this.wakeReconnect);
     window.addEventListener('online', this.wakeReconnect);
     window.addEventListener('pageshow', this.wakeReconnect);
@@ -182,6 +209,36 @@ export class ScreenShareController implements MediaProvider {
     const codecPreference = normalizeVideoCodecPreference(value);
     persistCodecPreference(codecPreference);
     this.update({ codecPreference });
+  }
+
+  // Nenhuma destas vale na transmissão em curso: o seletor só entrega áudio no
+  // momento da captura, e trocar a track exigiria renegociar com cada espectador.
+  setAudioSource(value: AudioSource) {
+    persistAudioSource(value);
+    this.update({ audioSource: value });
+  }
+
+  setAudioProfile(value: AudioProfile) {
+    persistAudioProfile(value);
+    applyAudioProfile(value);
+    this.update({ audioProfile: value });
+    void this.session?.peers.reapplyEncodeParameters();
+  }
+
+  setAudioDevice(deviceId: string) {
+    persistAudioDeviceId(deviceId);
+    this.update({ audioDeviceId: deviceId });
+  }
+
+  // Desliga a codificação em vez da track: sem bytes no ar e sem renegociação.
+  setAudioMuted(value: boolean) {
+    this.update({ audioMuted: value });
+    setAudioSending(this.state.audioLive && !value);
+    void this.session?.peers.reapplyEncodeParameters();
+  }
+
+  async refreshAudioInputs() {
+    this.update({ audioInputs: await listAudioInputs() });
   }
 
   reconnect() {
@@ -323,19 +380,33 @@ export class ScreenShareController implements MediaProvider {
     const capture = ++session.capture;
     this.update({ capturing: true });
     try {
-      const captured = await navigator.mediaDevices.getDisplayMedia({
-        video: CAPTURE_PRESETS[this.state.captureQuality],
-        audio: true,
-      });
-      if (
+      const captured = await navigator.mediaDevices.getDisplayMedia(
+        displayMediaConstraints(
+          CAPTURE_PRESETS[this.state.captureQuality],
+          this.state.audioSource,
+        ),
+      );
+      const stale = () =>
         !this.isCurrent(session) ||
         !session.joined ||
-        session.capture !== capture
-      ) {
+        session.capture !== capture;
+      if (stale()) {
         captured.getTracks().forEach(track => track.stop());
         return;
       }
-      this.beginPublishing(session, captured);
+      const videoTrack = captured.getVideoTracks()[0];
+      if (!videoTrack)
+        throw new Error('A captura não retornou uma track de vídeo.');
+      const audioTrack = await this.captureAudio(captured);
+      if (stale()) {
+        audioTrack?.stop();
+        captured.getTracks().forEach(track => track.stop());
+        return;
+      }
+      this.beginPublishing(
+        session,
+        new MediaStream(audioTrack ? [videoTrack, audioTrack] : [videoTrack]),
+      );
     } catch (error) {
       if (this.isCurrent(session) && session.capture === capture) {
         this.stopSessionSharing(session, false);
@@ -399,13 +470,14 @@ export class ScreenShareController implements MediaProvider {
   }
 
   private stopCapture() {
+    setAudioSending(false);
     this.localStream?.getTracks().forEach(track => {
       track.onended = null;
       track.stop();
     });
     this.localStream = null;
     this.activeCodecPreference = null;
-    this.update({ localStream: null });
+    this.update({ localStream: null, audioLive: false });
   }
 
   private stopSessionSharing(session: Session, notify: boolean) {
@@ -426,6 +498,29 @@ export class ScreenShareController implements MediaProvider {
     }
   }
 
+  // O áudio vem da captura ou de uma entrada, nunca dos dois: misturar exigiria um
+  // grafo de Web Audio, e este app compartilha tela, não conversa.
+  private async captureAudio(captured: MediaStream) {
+    const source = this.state.audioSource;
+    if (source === 'none') return null;
+    if (!usesAudioInput(source)) return captured.getAudioTracks()[0] ?? null;
+    try {
+      return await captureAudioInput(
+        this.state.audioDeviceId,
+        this.state.audioProfile,
+      );
+    } catch (error) {
+      // A entrada escolhida sumiu ou foi negada: compartilha sem som em vez de
+      // derrubar a transmissão inteira.
+      this.setError(
+        error instanceof Error
+          ? `Não foi possível abrir a entrada de áudio: ${error.message}`
+          : 'Não foi possível abrir a entrada de áudio.',
+      );
+      return null;
+    }
+  }
+
   private beginPublishing(session: Session, captured: MediaStream) {
     const screenTrack = captured.getVideoTracks()[0];
     if (!screenTrack)
@@ -433,6 +528,9 @@ export class ScreenShareController implements MediaProvider {
     screenTrack.contentHint = 'motion';
     this.localStream = captured;
     session.stream = captured;
+    const live = captured.getAudioTracks().length > 0;
+    this.update({ audioLive: live });
+    setAudioSending(live && !this.state.audioMuted);
     this.activeCodecPreference ??= this.state.codecPreference;
     session.codecPreference = this.activeCodecPreference;
     screenTrack.onended = () => {
@@ -442,7 +540,7 @@ export class ScreenShareController implements MediaProvider {
     const updateSettings = () => {
       const settings = screenTrack.getSettings();
       this.update({
-        captureInfo: `Captura real: ${settings.width ?? '?'} × ${settings.height ?? '?'} · ${settings.frameRate ?? 'indisponível'} FPS · ${captured.getAudioTracks().length ? 'Áudio incluído' : 'Sem áudio disponível nesta captura'}`,
+        captureInfo: `Captura real: ${settings.width ?? '?'} × ${settings.height ?? '?'} · ${settings.frameRate ?? 'indisponível'} FPS · ${describeShareAudio(this.state.audioSource, this.state.audioLive, this.state.audioMuted)}`,
       });
     };
     updateSettings();

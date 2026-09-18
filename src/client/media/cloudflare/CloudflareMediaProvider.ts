@@ -5,6 +5,13 @@ import {
   type ServerMessage,
 } from '../../../lib/signaling/messages';
 import {
+  AUDIO_PROFILE_SETTINGS,
+  type AudioProfile,
+  setAudioProfile as applyAudioProfile,
+  setAudioSending,
+  tuneOpus,
+} from '../../../lib/webrtc/audio';
+import {
   normalizeVideoCodecPreference,
   setVideoCodecPreference,
   type VideoCodecPreference,
@@ -21,12 +28,26 @@ import { inviteUrl, rememberRoomAccess } from '../../roomStorage';
 import { playSound, unlockSounds } from '../../sounds';
 import { loadTheme, type Theme } from '../../theme';
 import {
+  type AudioSource,
+  captureAudioInput,
+  describeShareAudio,
+  displayMediaConstraints,
+  listAudioInputs,
+  usesAudioInput,
+} from '../audioCapture';
+import {
   CAPTURE_PRESETS,
   persistAlias,
+  persistAudioDeviceId,
+  persistAudioProfile,
+  persistAudioSource,
   persistCaptureQuality,
   persistCodecPreference,
   persistDegradation,
   storedAlias,
+  storedAudioDeviceId,
+  storedAudioProfile,
+  storedAudioSource,
   storedCaptureQuality,
   storedCodecPreference,
   storedDegradation,
@@ -96,6 +117,9 @@ export class CloudflareMediaProvider implements MediaProvider {
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private reconnectAttempts = 0;
   private settingsTimer?: ReturnType<typeof setInterval>;
+  // O SFU já rejeitou offer alterada uma vez (ver tuneOpus abaixo); quando isso
+  // acontece, a sessão desiste do estéreo em vez de ficar sem compartilhar.
+  private opusMunge = true;
 
   private state: ScreenShareState = {
     mediaProvider: 'cloudflare',
@@ -123,6 +147,12 @@ export class CloudflareMediaProvider implements MediaProvider {
     degradation: storedDegradation(),
     captureQuality: storedCaptureQuality(),
     codecPreference: storedCodecPreference(),
+    audioSource: storedAudioSource(),
+    audioProfile: storedAudioProfile(),
+    audioDeviceId: storedAudioDeviceId(),
+    audioInputs: [],
+    audioMuted: false,
+    audioLive: false,
     inviteCopied: false,
   };
 
@@ -159,6 +189,8 @@ export class CloudflareMediaProvider implements MediaProvider {
     this.disposed = false;
     unlockSounds();
     setVideoDegradation(this.state.degradation);
+    applyAudioProfile(this.state.audioProfile);
+    setAudioSending(false);
     document.addEventListener('visibilitychange', this.wakeReconnect);
     window.addEventListener('online', this.wakeReconnect);
     window.addEventListener('pageshow', this.wakeReconnect);
@@ -218,6 +250,57 @@ export class CloudflareMediaProvider implements MediaProvider {
   setCodecPreference(value: VideoCodecPreference) {
     persistCodecPreference(normalizeVideoCodecPreference(value));
     this.update({ codecPreference: normalizeVideoCodecPreference(value) });
+  }
+
+  // Nenhuma destas vale na transmissão em curso: o seletor só entrega áudio no
+  // momento da captura, e trocar a track exigiria republicar no SFU.
+  setAudioSource(value: AudioSource) {
+    persistAudioSource(value);
+    this.update({ audioSource: value });
+  }
+
+  setAudioProfile(value: AudioProfile) {
+    persistAudioProfile(value);
+    applyAudioProfile(value);
+    this.update({ audioProfile: value });
+    void this.applyEncodeParameters();
+  }
+
+  setAudioDevice(deviceId: string) {
+    persistAudioDeviceId(deviceId);
+    this.update({ audioDeviceId: deviceId });
+  }
+
+  // Desliga a codificação em vez da track: sem bytes no ar e sem republicar.
+  setAudioMuted(value: boolean) {
+    this.update({ audioMuted: value });
+    setAudioSending(this.state.audioLive && !value);
+    void this.applyEncodeParameters();
+  }
+
+  async refreshAudioInputs() {
+    this.update({ audioInputs: await listAudioInputs() });
+  }
+
+  // O áudio vem da captura ou de uma entrada, nunca dos dois: misturar exigiria um
+  // grafo de Web Audio, e este app compartilha tela, não conversa.
+  private async captureAudio(captured: MediaStream) {
+    const source = this.state.audioSource;
+    if (source === 'none') return null;
+    if (!usesAudioInput(source)) return captured.getAudioTracks()[0] ?? null;
+    try {
+      return await captureAudioInput(
+        this.state.audioDeviceId,
+        this.state.audioProfile,
+      );
+    } catch (error) {
+      this.setError(
+        error instanceof Error
+          ? `Não foi possível abrir a entrada de áudio: ${error.message}`
+          : 'Não foi possível abrir a entrada de áudio.',
+      );
+      return null;
+    }
   }
 
   // ---- room access ----
@@ -284,11 +367,14 @@ export class CloudflareMediaProvider implements MediaProvider {
     this.capturing = true;
     this.update({ capturing: true });
     try {
-      const captured = await navigator.mediaDevices.getDisplayMedia({
-        video: CAPTURE_PRESETS[this.state.captureQuality],
-        audio: true,
-      });
-      if (!this.isCurrent(seq) || !this.joined) {
+      const captured = await navigator.mediaDevices.getDisplayMedia(
+        displayMediaConstraints(
+          CAPTURE_PRESETS[this.state.captureQuality],
+          this.state.audioSource,
+        ),
+      );
+      const stale = () => !this.isCurrent(seq) || !this.joined;
+      if (stale()) {
         captured.getTracks().forEach(track => track.stop());
         return;
       }
@@ -297,9 +383,19 @@ export class CloudflareMediaProvider implements MediaProvider {
         throw new Error('A captura não retornou uma track de vídeo.');
       screenTrack.contentHint = 'motion';
       screenTrack.onended = () => this.stopSharing(true);
-      this.localStream = captured;
+      const audioTrack = await this.captureAudio(captured);
+      if (stale()) {
+        audioTrack?.stop();
+        captured.getTracks().forEach(track => track.stop());
+        return;
+      }
+      this.update({ audioLive: Boolean(audioTrack) });
+      setAudioSending(Boolean(audioTrack) && !this.state.audioMuted);
+      this.localStream = new MediaStream(
+        audioTrack ? [screenTrack, audioTrack] : [screenTrack],
+      );
       this.wantsToShare = true;
-      await this.queue.run(() => this.publish(seq, captured));
+      await this.queue.run(() => this.publish(seq, this.localStream!));
     } catch (error) {
       if (!this.isCurrent(seq)) return;
       if (error instanceof RealtimeError) {
@@ -331,11 +427,16 @@ export class CloudflareMediaProvider implements MediaProvider {
       ? pc.addTransceiver(audioTrack, { direction: 'sendonly' })
       : undefined;
 
-    // Sem munge de SDP para o SFU: os hints x-google-*-bitrate são específicos de
+    // Sem munge de vídeo para o SFU: os hints x-google-*-bitrate são específicos de
     // browser-para-browser e o Cloudflare devolve uma answer que o Chrome não
     // consegue reconciliar ("Failed to set remote video description send parameters").
-    // O teto de bitrate é aplicado depois via RTCRtpSender.setParameters().
+    // O teto de bitrate é aplicado depois via RTCRtpSender.setParameters(). Os
+    // parâmetros de Opus são padrão (RFC 7587) e vão na própria offer, porque sem
+    // stereo declarado o SFU responde mono e o perfil de música não muda nada.
     const offer = await pc.createOffer();
+    const munged = this.opusMunge && Boolean(offer.sdp);
+    if (offer.sdp && munged)
+      offer.sdp = tuneOpus(offer.sdp, this.state.audioProfile);
     await pc.setLocalDescription(offer);
     await waitForIceGathering(pc);
     if (!this.isCurrent(seq)) return;
@@ -357,8 +458,18 @@ export class CloudflareMediaProvider implements MediaProvider {
       tracks,
     });
     if (!this.isCurrent(seq)) return;
-    if (res.sessionDescription)
-      await pc.setRemoteDescription(res.sessionDescription);
+    if (res.sessionDescription) {
+      try {
+        await pc.setRemoteDescription(res.sessionDescription);
+      } catch (error) {
+        // Mesmo risco do munge de vídeo: uma offer alterada pode voltar numa answer
+        // que o Chrome não reconcilia. Nesse caso o estéreo é o que se perde, não a
+        // transmissão — a sessão reconecta e republica sem o ajuste.
+        if (!munged) throw error;
+        this.opusMunge = false;
+        throw new RealtimeError('unavailable', 0);
+      }
+    }
 
     this.publication = {
       videoName,
@@ -389,7 +500,7 @@ export class CloudflareMediaProvider implements MediaProvider {
     const tick = () => {
       const s = screenTrack.getSettings();
       this.update({
-        captureInfo: `Captura real: ${s.width ?? '?'} × ${s.height ?? '?'} · ${s.frameRate ?? 'indisponível'} FPS · ${captured.getAudioTracks().length ? 'Áudio incluído' : 'Sem áudio disponível nesta captura'}`,
+        captureInfo: `Captura real: ${s.width ?? '?'} × ${s.height ?? '?'} · ${s.frameRate ?? 'indisponível'} FPS · ${describeShareAudio(this.state.audioSource, this.state.audioLive, this.state.audioMuted)}`,
       });
     };
     tick();
@@ -400,13 +511,22 @@ export class CloudflareMediaProvider implements MediaProvider {
   private async applyEncodeParameters() {
     for (const tx of this.sendTransceivers) {
       const sender = tx.sender;
-      if (sender.track?.kind !== 'video') continue;
+      const kind = sender.track?.kind;
+      if (kind !== 'video' && kind !== 'audio') continue;
       const parameters = sender.getParameters();
       if (!parameters.encodings?.length) continue;
-      parameters.degradationPreference = VIDEO_DEGRADATION_PREFERENCE;
-      if (MAX_VIDEO_BITRATE)
-        for (const encoding of parameters.encodings)
-          encoding.maxBitrate = MAX_VIDEO_BITRATE;
+      if (kind === 'audio') {
+        for (const encoding of parameters.encodings) {
+          encoding.active = this.state.audioLive && !this.state.audioMuted;
+          encoding.maxBitrate =
+            AUDIO_PROFILE_SETTINGS[this.state.audioProfile].maxAverageBitrate;
+        }
+      } else {
+        parameters.degradationPreference = VIDEO_DEGRADATION_PREFERENCE;
+        if (MAX_VIDEO_BITRATE)
+          for (const encoding of parameters.encodings)
+            encoding.maxBitrate = MAX_VIDEO_BITRATE;
+      }
       try {
         await sender.setParameters(parameters);
       } catch {
@@ -453,6 +573,7 @@ export class CloudflareMediaProvider implements MediaProvider {
   private teardownCapture() {
     if (this.settingsTimer) clearInterval(this.settingsTimer);
     this.settingsTimer = undefined;
+    setAudioSending(false);
     this.localStream?.getTracks().forEach(track => {
       track.onended = null;
       track.stop();
@@ -464,6 +585,7 @@ export class CloudflareMediaProvider implements MediaProvider {
       capturing: false,
       captureInfo: '',
       localStream: null,
+      audioLive: false,
     });
   }
 

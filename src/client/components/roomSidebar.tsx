@@ -1,10 +1,11 @@
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { ALIAS_MAX_LENGTH } from '../../lib/signaling/messages';
 import {
   isVideoCodecSupported,
   type VideoCodecPreference,
   VIDEO_CODEC_PREFERENCES,
 } from '../../lib/webrtc/codecs';
+import { usesAudioInput } from '../media/audioCapture';
 import type { MediaProvider } from '../media/types';
 import { ACCENTS, type ScreenShareState } from '../screenShare';
 import { inviteUrl, listFavoriteRooms } from '../roomStorage';
@@ -58,6 +59,26 @@ const CAPTURE_ITEMS: Array<{
   { value: 'sharp', label: 'Nítida — 1440p · 60 FPS' },
 ];
 
+const AUDIO_SOURCE_ITEMS: Array<{
+  label: string;
+  value: ScreenShareState['audioSource'];
+}> = [
+  { value: 'capture', label: 'Da captura — sem o mix do sistema' },
+  { value: 'capture-with-system', label: 'Da captura — com o mix do sistema' },
+  { value: 'input', label: 'De uma entrada de áudio' },
+  { value: 'none', label: 'Sem áudio' },
+];
+
+const AUDIO_PROFILE_ITEMS: Array<{
+  label: string;
+  value: ScreenShareState['audioProfile'];
+}> = [
+  { value: 'music', label: 'Jogo ou música — estéreo, 192 kbps' },
+  { value: 'voice', label: 'Voz — mono, 40 kbps' },
+];
+
+const DEFAULT_AUDIO_INPUT = { value: '', label: 'Entrada padrão do sistema' };
+
 export function RoomSidebar({
   roomId,
   state,
@@ -67,6 +88,27 @@ export function RoomSidebar({
 }: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const favoriteRooms = listFavoriteRooms();
+  const usesAudioDevice = usesAudioInput(state.audioSource);
+  const audioInputItems = [
+    DEFAULT_AUDIO_INPUT,
+    ...state.audioInputs.map(input => ({
+      value: input.deviceId,
+      label: input.label,
+    })),
+  ];
+
+  // Os rótulos das entradas só existem depois de alguma permissão de áudio, e a
+  // lista muda quando um cabo virtual aparece ou some.
+  useEffect(() => {
+    if (!settingsOpen || !usesAudioDevice) return;
+    void controller.refreshAudioInputs();
+    const devices = navigator.mediaDevices;
+    if (!devices?.addEventListener) return;
+    const refresh = () => void controller.refreshAudioInputs();
+    devices.addEventListener('devicechange', refresh);
+    return () => devices.removeEventListener('devicechange', refresh);
+  }, [controller, settingsOpen, usesAudioDevice]);
+
   const connected = state.socketState === 'connected' && Boolean(state.selfId);
   const selfName = state.selfId ? controller.nameOf(state.selfId) : 'Você';
   const fallbackName = state.selfId
@@ -273,6 +315,99 @@ export function RoomSidebar({
             <span className="settings-hint">
               A alteração vale no próximo compartilhamento.
             </span>
+            <span className="label">Áudio da transmissão</span>
+            <Select
+              items={AUDIO_SOURCE_ITEMS}
+              value={state.audioSource}
+              onValueChange={value => value && controller.setAudioSource(value)}
+            >
+              <SelectTrigger aria-label="De onde vem o áudio da transmissão">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {AUDIO_SOURCE_ITEMS.map(item => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <span className="settings-hint">
+              Sem o mix do sistema, compartilhar uma janela ou a tela vai sem
+              som e nada que toque em outros programas vaza junto — só a captura
+              de aba tem áudio próprio. Para enviar um programa sozinho, mande a
+              saída dele para um cabo virtual (VB-Cable, Voicemeeter) no mixer
+              de volume do Windows e capture esse cabo como entrada.
+            </span>
+            {usesAudioDevice && (
+              <>
+                <span className="label">Entrada de áudio</span>
+                <Select
+                  items={audioInputItems}
+                  value={state.audioDeviceId}
+                  onValueChange={value =>
+                    value !== null && controller.setAudioDevice(value)
+                  }
+                >
+                  <SelectTrigger aria-label="Entrada de áudio capturada">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {audioInputItems.map(item => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </>
+            )}
+            <span className="label">Perfil de áudio</span>
+            <Select
+              items={AUDIO_PROFILE_ITEMS}
+              value={state.audioProfile}
+              onValueChange={value =>
+                value && controller.setAudioProfile(value)
+              }
+            >
+              <SelectTrigger aria-label="Como o áudio é codificado">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {AUDIO_PROFILE_ITEMS.map(item => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            {state.audioLive && (
+              <>
+                <span className="label">Áudio no ar</span>
+                <div className="theme-row">
+                  <button
+                    type="button"
+                    className={`theme-btn${state.audioMuted ? '' : ' is-active'}`}
+                    onClick={() => controller.setAudioMuted(false)}
+                  >
+                    Ligado
+                  </button>
+                  <button
+                    type="button"
+                    className={`theme-btn${state.audioMuted ? ' is-active' : ''}`}
+                    onClick={() => controller.setAudioMuted(true)}
+                  >
+                    Mudo
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
         <div className="sidebar-footer">

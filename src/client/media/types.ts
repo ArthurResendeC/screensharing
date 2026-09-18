@@ -1,8 +1,10 @@
 import type { Participant } from '../../lib/signaling/messages';
+import type { AudioProfile } from '../../lib/webrtc/audio';
 import type { VideoCodecPreference } from '../../lib/webrtc/codecs';
 import type { Peers } from '../../lib/webrtc/peers';
 import type { VideoDegradation } from '../../lib/webrtc/rtcConfiguration';
 import type { Theme } from '../theme';
+import type { AudioInput, AudioSource } from './audioCapture';
 
 // Qual implementação de mídia está ativa. Escolhida em /config.json e lida por
 // createMediaProvider(); os componentes só precisam disso para ajustar duas frases.
@@ -54,6 +56,14 @@ export type ScreenShareState = {
   degradation: VideoDegradation;
   captureQuality: CaptureQuality;
   codecPreference: VideoCodecPreference;
+  audioSource: AudioSource;
+  audioProfile: AudioProfile;
+  audioDeviceId: string;
+  audioInputs: AudioInput[];
+  audioMuted: boolean;
+  // Se a transmissão em curso realmente leva áudio, que nem sempre é o que foi
+  // pedido: a captura pode ter voltado sem som, ou a entrada pode ter falhado.
+  audioLive: boolean;
   inviteCopied: boolean;
 };
 
@@ -75,6 +85,11 @@ export interface MediaProvider {
   setDegradation(value: VideoDegradation): void;
   setCaptureQuality(value: CaptureQuality): Promise<void>;
   setCodecPreference(value: VideoCodecPreference): void;
+  setAudioSource(value: AudioSource): void;
+  setAudioProfile(value: AudioProfile): void;
+  setAudioDevice(deviceId: string): void;
+  setAudioMuted(value: boolean): void;
+  refreshAudioInputs(): Promise<void>;
   reconnect(): void;
   retryRoomPassword(password: string): void;
   dismissJoinError(): void;

@@ -6,6 +6,7 @@ type TestWindow = Window & {
   testTrack: MediaStreamTrack;
   testPictureInPictureRequests: number;
   testAutoPipHandler: (() => void) | null;
+  testDisplayOptions: DisplayMediaStreamOptions | undefined;
 };
 const remoteVideo = (page: Page) =>
   page.getByLabel('Transmissão selecionada', { exact: true });
@@ -111,7 +112,8 @@ async function instrument(context: BrowserContext) {
 async function capture(page: Page, color: string, withAudio = true) {
   await page.addInitScript(
     ({ color, withAudio }) => {
-      navigator.mediaDevices.getDisplayMedia = async () => {
+      navigator.mediaDevices.getDisplayMedia = async options => {
+        Object.assign(window, { testDisplayOptions: options });
         const canvas = document.createElement('canvas');
         canvas.width = 640;
         canvas.height = 360;
@@ -364,7 +366,7 @@ test('five participants: simultaneous publishing, reciprocal watching and two re
   await shareButton(a).click();
   await shareButton(b).click();
   await expect(b.locator('[data-capture-info]')).toContainText(
-    'Sem áudio disponível nesta captura',
+    'Sem áudio nesta captura',
   );
   // Publishing with no subscribers does not create any RTP connections.
   await expect
@@ -736,4 +738,126 @@ test('a redeploy drops every socket at once and the room restores itself without
   await playing(a, 'blue', 1);
   await playing(b, 'red', 1);
   expect(errors).toEqual([]);
+});
+
+async function chooseAudioSource(page: Page, option: RegExp) {
+  const settings = page.getByRole('button', {
+    name: 'Configurações',
+    exact: true,
+  });
+  if ((await page.locator('.settings-panel').count()) === 0)
+    await settings.click();
+  await page
+    .getByRole('combobox', { name: 'De onde vem o áudio da transmissão' })
+    .click();
+  await page.getByRole('option', { name: option }).click();
+}
+
+async function inboundBytes(page: Page, kind: 'audio' | 'video') {
+  return page.evaluate(async (wanted: string) => {
+    let bytes = 0;
+    for (const pc of (window as unknown as TestWindow).testConnections.filter(
+      pc => pc.connectionState === 'connected',
+    )) {
+      (await pc.getStats()).forEach(
+        (stat: RTCStats & { kind?: string; bytesReceived?: number }) => {
+          if (stat.type === 'inbound-rtp' && stat.kind === wanted)
+            bytes += stat.bytesReceived ?? 0;
+        },
+      );
+    }
+    return bytes;
+  }, kind);
+}
+
+test('the sharer silences the audio without disturbing the video or renegotiating', async ({
+  page: a,
+  context,
+}) => {
+  await instrument(context);
+  await capture(a, '#ff0000');
+  await a.goto('/');
+  await createProtectedRoom(a);
+  await enterRoom(a);
+  const aName = await identity(a);
+  const b = await context.newPage();
+  await capture(b, '#0000ff', false);
+  await b.goto(a.url());
+  await enterRoom(b);
+  await shareButton(a).click();
+  await choose(b, aName);
+  await playing(b, 'red', 1);
+  const before = await activeCounts(b);
+
+  await a.getByRole('button', { name: 'Configurações', exact: true }).click();
+  await a.getByRole('button', { name: 'Mudo', exact: true }).click();
+
+  // Muting deactivates the encoding: the audio stops arriving while the same
+  // connection keeps carrying video, so nobody has to renegotiate.
+  await expect
+    .poll(async () => {
+      const first = await inboundBytes(b, 'audio');
+      await b.waitForTimeout(600);
+      return (await inboundBytes(b, 'audio')) - first;
+    })
+    .toBe(0);
+  const video = await inboundBytes(b, 'video');
+  await expect.poll(() => inboundBytes(b, 'video')).toBeGreaterThan(video);
+  expect(await activeCounts(b)).toEqual(before);
+
+  // And it comes back on the same connection.
+  await a.getByRole('button', { name: 'Ligado', exact: true }).click();
+  const silent = await inboundBytes(b, 'audio');
+  await expect.poll(() => inboundBytes(b, 'audio')).toBeGreaterThan(silent);
+  expect(await activeCounts(b)).toEqual(before);
+});
+
+test('the picker is asked to leave the system mix out unless the sharer asks for it', async ({
+  page,
+  context,
+}) => {
+  await instrument(context);
+  await capture(page, '#ff0000');
+  await page.goto('/');
+  await createProtectedRoom(page);
+  await enterRoom(page);
+  await shareButton(page).click();
+
+  // The default: a window or screen capture cannot pick up whatever else is playing
+  // on the machine, because the picker never offers it.
+  expect(
+    await page.evaluate(
+      () => (window as unknown as TestWindow).testDisplayOptions,
+    ),
+  ).toMatchObject({ systemAudio: 'exclude', selfBrowserSurface: 'exclude' });
+
+  await stopShareButton(page).click();
+  await chooseAudioSource(page, /com o mix do sistema/);
+  await shareButton(page).click();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as TestWindow).testDisplayOptions,
+    ),
+  ).toMatchObject({ systemAudio: 'include' });
+
+  // And the choice is remembered, so nobody re-enables it by accident on the next visit.
+  await page.reload();
+  await enterRoom(page);
+  await shareButton(page).click();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as TestWindow).testDisplayOptions,
+    ),
+  ).toMatchObject({ systemAudio: 'include' });
+
+  // Choosing no audio at all stops the picker from being asked for any.
+  await stopShareButton(page).click();
+  await chooseAudioSource(page, /^Sem áudio$/);
+  await shareButton(page).click();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as TestWindow).testDisplayOptions,
+    ),
+  ).toMatchObject({ audio: false, systemAudio: 'exclude' });
+  await expect(page.locator('[data-capture-info]')).toContainText('Sem áudio');
 });

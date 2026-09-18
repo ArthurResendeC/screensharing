@@ -1,4 +1,10 @@
 import type { ClientMessage, PeerSignal } from '../signaling/messages';
+import {
+  AUDIO_PROFILE,
+  AUDIO_PROFILE_SETTINGS,
+  AUDIO_SENDING,
+  tuneOpus,
+} from './audio';
 import { setVideoCodecPreference, type VideoCodecPreference } from './codecs';
 import {
   MAX_VIDEO_BITRATE,
@@ -97,7 +103,8 @@ export class Peers {
       }
       const offer = await entry.pc.createOffer();
       if (!this.current(entry)) return;
-      if (offer.sdp) offer.sdp = tuneVideoBitrate(offer.sdp);
+      if (offer.sdp)
+        offer.sdp = tuneOpus(tuneVideoBitrate(offer.sdp), AUDIO_PROFILE);
       await entry.pc.setLocalDescription(offer);
       if (!this.current(entry)) return;
       this.send({
@@ -156,7 +163,7 @@ export class Peers {
         return;
       await pc.setRemoteDescription({
         type: 'answer',
-        sdp: tuneVideoBitrate(message.sdp.sdp),
+        sdp: tuneOpus(tuneVideoBitrate(message.sdp.sdp), AUDIO_PROFILE),
       });
       if (!this.current(entry)) return;
       await this.flush(entry);
@@ -173,13 +180,24 @@ export class Peers {
   private async applyEncodeParameters(entry: Entry) {
     for (const sender of entry.pc.getSenders()) {
       if (!this.current(entry)) return;
-      if (sender.track?.kind !== 'video') continue;
+      const kind = sender.track?.kind;
+      if (kind !== 'video' && kind !== 'audio') continue;
       const parameters = sender.getParameters();
       if (!parameters.encodings?.length) continue;
-      parameters.degradationPreference = VIDEO_DEGRADATION_PREFERENCE;
-      if (MAX_VIDEO_BITRATE)
-        for (const encoding of parameters.encodings)
-          encoding.maxBitrate = MAX_VIDEO_BITRATE;
+      if (kind === 'audio') {
+        for (const encoding of parameters.encodings) {
+          // Desligar a codificação em vez de remover a track: a track publicada é
+          // sempre a mesma saída do mixer, então mudar de fonte nunca renegocia.
+          encoding.active = AUDIO_SENDING;
+          encoding.maxBitrate =
+            AUDIO_PROFILE_SETTINGS[AUDIO_PROFILE].maxAverageBitrate;
+        }
+      } else {
+        parameters.degradationPreference = VIDEO_DEGRADATION_PREFERENCE;
+        if (MAX_VIDEO_BITRATE)
+          for (const encoding of parameters.encodings)
+            encoding.maxBitrate = MAX_VIDEO_BITRATE;
+      }
       try {
         await sender.setParameters(parameters);
       } catch {

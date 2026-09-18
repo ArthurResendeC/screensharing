@@ -1,10 +1,12 @@
 import { ALIAS_MAX_LENGTH } from '../../lib/signaling/messages';
+import { AUDIO_PROFILES, type AudioProfile } from '../../lib/webrtc/audio';
 import {
   normalizeVideoCodecPreference,
   type VideoCodecPreference,
   VIDEO_CODEC_PREFERENCES,
 } from '../../lib/webrtc/codecs';
 import type { VideoDegradation } from '../../lib/webrtc/rtcConfiguration';
+import { AUDIO_SOURCES, type AudioSource } from './audioCapture';
 import type { CaptureQuality } from './types';
 
 // Preferências de sessão guardadas no navegador. Compartilhadas pelos dois provedores
@@ -13,6 +15,9 @@ const ALIAS_STORAGE_KEY = 'screen-share:alias';
 const DEGRADATION_STORAGE_KEY = 'screen-share:degradation';
 const CAPTURE_STORAGE_KEY = 'screen-share:capture';
 const CODEC_STORAGE_KEY = 'screen-share:codec';
+const AUDIO_SOURCE_STORAGE_KEY = 'screen-share:audio-source';
+const AUDIO_PROFILE_STORAGE_KEY = 'screen-share:audio-profile';
+const AUDIO_DEVICE_STORAGE_KEY = 'screen-share:audio-device';
 
 const DEGRADATION_CHOICES = ['framerate', 'balanced', 'resolution'] as const;
 const CAPTURE_CHOICES = ['fluid', 'balanced', 'sharp'] as const;
@@ -103,6 +108,48 @@ export function storedCodecPreference(): VideoCodecPreference {
 export function persistCodecPreference(value: VideoCodecPreference) {
   try {
     localStorage.setItem(CODEC_STORAGE_KEY, value);
+  } catch {
+    // Preference remains valid for this tab.
+  }
+}
+
+// 'capture' e não 'capture-with-system': capturar janela ou tela no Windows traz o
+// mix inteiro do sistema junto, então o vazamento só acontece se o participante pedir.
+export function storedAudioSource(): AudioSource {
+  return storedChoice(AUDIO_SOURCE_STORAGE_KEY, AUDIO_SOURCES, 'capture');
+}
+
+export function persistAudioSource(value: AudioSource) {
+  try {
+    localStorage.setItem(AUDIO_SOURCE_STORAGE_KEY, value);
+  } catch {
+    // Preference remains valid for this tab.
+  }
+}
+
+export function storedAudioProfile(): AudioProfile {
+  return storedChoice(AUDIO_PROFILE_STORAGE_KEY, AUDIO_PROFILES, 'music');
+}
+
+export function persistAudioProfile(value: AudioProfile) {
+  try {
+    localStorage.setItem(AUDIO_PROFILE_STORAGE_KEY, value);
+  } catch {
+    // Preference remains valid for this tab.
+  }
+}
+
+export function storedAudioDeviceId(): string {
+  try {
+    return localStorage.getItem(AUDIO_DEVICE_STORAGE_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function persistAudioDeviceId(value: string) {
+  try {
+    localStorage.setItem(AUDIO_DEVICE_STORAGE_KEY, value);
   } catch {
     // Preference remains valid for this tab.
   }

@@ -649,6 +649,8 @@ ul.members {
   }
 }
 
+/* Irmão da lista de participantes numa coluna com overflow: hidden, então precisa
+   rolar por conta própria — sem isto, cada ajuste novo empurra o rodapé para fora. */
 .settings-panel {
   margin: 0 10px 8px;
   padding: 12px;
@@ -658,6 +660,12 @@ ul.members {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 0 1 auto;
+  min-height: 0;
+  /* Teto para o painel não espremer a lista de participantes até sobrar uma linha. */
+  max-height: 52%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .settings-panel .label {
   font-size: 10.5px;
