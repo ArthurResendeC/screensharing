@@ -268,10 +268,26 @@ export class SignalingHub {
         );
         return;
       }
-      // A reconnecting client reclaims its previous identity (unless already taken)
-      // so peers can resume their subscriptions after a redeploy drops every socket.
-      if (message.clientId && !room.members.has(message.clientId))
+      // A reconnecting client reclaims its previous identity so peers can resume their
+      // subscriptions after a redeploy or network blip drops the socket. Only the
+      // originating tab ever knows its own clientId, so a collision here always means
+      // the existing member is a stale connection the heartbeat hasn't reaped yet —
+      // evict it immediately instead of leaving both entries visible as "duplicate"
+      // participants until the next heartbeat cycle.
+      if (message.clientId) {
+        const stale = room.members.get(message.clientId);
+        if (stale && stale !== client) {
+          room.members.delete(stale.id);
+          for (const sessionId of stale.watching.keys())
+            this.unsubscribe(stale, room, sessionId);
+          this.stopPublishing(stale, room);
+          this.clients.delete(stale);
+          stale.roomId = undefined;
+          stale.socket?.close(4001, 'Reconectado em outra sessão.');
+          stale.socket = undefined;
+        }
         client.id = message.clientId;
+      }
       client.roomId = message.roomId;
       room.members.set(client.id, client);
       this.send(client, {

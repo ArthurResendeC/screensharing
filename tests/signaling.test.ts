@@ -685,3 +685,46 @@ test('a reconnecting client reclaims its previous peer id', () => {
     hub.close();
   }
 });
+
+test('a reconnect race evicts the stale connection instead of duplicating the participant', () => {
+  const hub = new SignalingHub(ROOM_SECRET);
+  const roomId = crypto.randomUUID();
+  const clientId = crypto.randomUUID();
+  const join = () => {
+    const client = hub.createClient();
+    const socket = new FakeSocket();
+    hub.open(client, socket);
+    hub.message(
+      client,
+      JSON.stringify(authorized({ type: 'join-room', roomId, clientId })),
+    );
+    return { client, socket };
+  };
+  try {
+    const first = join();
+    const joined = first.socket.take('joined');
+    if (joined.type !== 'joined') throw new Error();
+    expect(joined.peerId).toBe(clientId);
+
+    // The old socket's close event has not fired yet (network blip, not a clean
+    // close), so the stale member is still in the room when the client reconnects.
+    const second = join();
+    const rejoined = second.socket.take('joined');
+    if (rejoined.type !== 'joined') throw new Error();
+    expect(rejoined.peerId).toBe(clientId);
+    expect(rejoined.peers).toHaveLength(1);
+    expect(first.socket.closed).toBe(true);
+    const state = second.socket.take('room-state');
+    if (state.type !== 'room-state') throw new Error();
+    expect(state.peers).toHaveLength(1);
+    expect(state.peers[0]?.peerId).toBe(clientId);
+
+    // The stale socket's belated close event must be a no-op: it must not remove
+    // the member that already reclaimed this identity.
+    second.socket.inbox.length = 0;
+    hub.leave(first.client);
+    expect(second.socket.inbox).toHaveLength(0);
+  } finally {
+    hub.close();
+  }
+});
