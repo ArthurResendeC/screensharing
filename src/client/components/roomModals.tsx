@@ -3,23 +3,116 @@ import {
   ALIAS_MAX_LENGTH,
   ROOM_PASSWORD_MAX_LENGTH,
 } from '../../lib/signaling/messages';
-import type { MediaProvider } from '../media/types';
+import type { HostSecrets, MediaProvider } from '../media/types';
 import type { ScreenShareState } from '../screenShare';
 import { CloseIcon, EndedIcon, EyeIcon, ScreenIcon } from './icons';
 
+// Entregue uma única vez, na criação da sala ou na reivindicação do controle. Depois
+// disso não há insistência: mesmo tratamento que o link de convite e a senha já
+// recebem — mostrados uma vez, e daí em diante é responsabilidade de quem criou.
+export function HostSecretsModal({
+  secrets,
+  onDismiss,
+}: {
+  secrets: HostSecrets | null;
+  onDismiss: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  if (!secrets) return null;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(secrets.recoveryCode);
+      setCopied(true);
+    } catch {
+      // Sem área de transferência a pessoa ainda pode selecionar o código à mão.
+    }
+  };
+  return (
+    <div className="modal-overlay">
+      <div
+        className="modal-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="recovery-code-title"
+      >
+        <div className="icon">
+          <ScreenIcon />
+        </div>
+        <h2 id="recovery-code-title">Guarde seu código de recuperação</h2>
+        <p>
+          Este é o único jeito de reaver o controle da sala se você limpar os
+          dados deste navegador ou trocar de dispositivo. Ele não será mostrado
+          de novo.
+        </p>
+        <code className="recovery-code mono" data-recovery-code>
+          {secrets.recoveryCode}
+        </code>
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => void copy()}
+          >
+            {copied ? 'Código copiado' : 'Copiar código'}
+          </button>
+          <button type="button" className="btn btn-outline" onClick={onDismiss}>
+            Já guardei
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function KickedModal({ by }: { by: ScreenShareState['kickedBy'] }) {
+  if (!by) return null;
+  return (
+    <div className="modal-overlay">
+      <div
+        className="modal-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="kicked-title"
+        data-kicked
+      >
+        <div className="icon">
+          <EndedIcon />
+        </div>
+        <h2 id="kicked-title">Você foi removido da sala</h2>
+        <p>
+          {by === 'host'
+            ? 'O dono da sala removeu você. '
+            : 'Um moderador removeu você. '}
+          Peça um novo convite se acha que foi engano.
+        </p>
+        <div className="modal-actions">
+          <a className="btn btn-primary" href="/">
+            Voltar ao início
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Controlado pela sala: o diálogo do código de recuperação precisa saber, no mesmo
+// commit, que este portão saiu da frente — senão os dois se sobrepõem por um quadro.
 export function NameGate({
+  open,
   state,
   controller,
+  onSubmit,
 }: {
+  open: boolean;
   state: ScreenShareState;
   controller: MediaProvider;
+  onSubmit: () => void;
 }) {
-  const [open, setOpen] = useState(!state.alias);
   const submit = (event: React.SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
     const value = new FormData(event.currentTarget).get('alias');
     controller.setAlias(typeof value === 'string' ? value : '');
-    setOpen(false);
+    onSubmit();
   };
   return (
     <div className="name-gate" data-name-gate hidden={!open}>

@@ -8,7 +8,7 @@ Aplicação privada para até **dez participantes**. Cada pessoa pode transmitir
 - A sala é composta por componentes React separados para navegação, participantes, palco e modais; o controlador de sessão mantém signaling, captura e ciclo de vida WebRTC fora da camada visual.
 - Um único `Bun.serve()` atende `/`, `/room/:roomId`, `/health`, `/config.json` e o WebSocket `/signaling`.
 - Zod valida todas as mensagens nos dois lados.
-- Participantes conectados ficam em memória. O nome e a proteção da sala ficam em um convite assinado, dispensando banco de dados.
+- Participantes conectados ficam em memória. O nome e a proteção da sala ficam em um convite assinado. Um SQLite (`bun:sqlite`, sem dependência nova) guarda apenas o que precisa sobreviver ao redeploy: dono, moderadores permanentes e o transporte escolhido por sala — só como HMAC.
 - Cada assinatura usa um `RTCPeerConnection` unidirecional. Um transmissor tem uma conexão de envio por espectador; cada participante mantém no máximo duas conexões de recebimento.
 
 ## Desenvolvimento local
@@ -41,6 +41,39 @@ O processo deve iniciar a partir da raiz; o script `start` entra em `dist` para 
 7. O preview local permanece sem som. O vídeo remoto não é silenciado; se o navegador bloquear autoplay com áudio, clique em **Reproduzir vídeo e áudio**.
 8. O botão nativo de parar captura, **Parar compartilhamento**, fechar a aba ou perder o signaling encerram tracks e conexões relacionadas.
 
+## Dono da sala, moderadores e transporte por sala
+
+Quem cria a sala é o **dono**. Na criação o servidor emite dois segredos: um `hostToken`
+que o navegador guarda e reapresenta em silêncio a cada entrada, e um **código de
+recuperação** mostrado uma única vez, num diálogo "guarde isto". O servidor grava só o
+HMAC dos dois, com a mesma chave `ROOM_TOKEN_SECRET` dos convites.
+
+O dono pode, pela lista de participantes, promover alguém a **moderador** — _nesta
+sessão_ (some quando a pessoa desconecta, por design) ou _permanente_ (volta a valer em
+cada visita). Moderadores podem remover participantes e trocar o transporte de mídia da
+sala; conceder e revogar moderação continua sendo só do dono. O dono nunca é alvo de
+expulsão nem de rebaixamento. Em **Configurações**, o dono ainda vê e revoga os
+moderadores permanentes, inclusive os que estão offline.
+
+A identidade de moderador é um `memberId` opaco que o navegador gera e guarda por sala.
+Não é conta: só reconhece "este navegador, nesta sala". É tratado como segredo e nunca
+entra em broadcast — o que circula na sala é apenas o papel derivado (`host`,
+`moderator`, `guest`), usado para os crachás e para liberar os controles.
+
+Se o dono limpar os dados do navegador ou trocar de dispositivo, **Recuperar controle da
+sala**, no início, pede o link e o código de recuperação. O uso é único: os dois segredos
+são trocados na hora, então um código exposto para de valer assim que é usado. O endpoint
+tem limite de tentativas e responde igual para código errado e sala inexistente. Isso não
+prova que quem recupera criou a sala, só que tem o código — a mesma garantia que o
+convite e a senha já oferecem aqui.
+
+Salas criadas antes deste recurso não têm dono: qualquer pessoa presente vê **Assumir o
+controle** e a primeira que clicar passa a ser a dona. A corrida existe, mas é explícita
+e visível, em vez de premiar em silêncio quem reconectou primeiro depois de um deploy.
+
+Salas agora persistem mesmo vazias. Uma varredura horária apaga as que passaram
+`ROOM_RETENTION_DAYS` (padrão 30) sem nenhuma entrada ou ação de dono/moderador.
+
 ## Instalação como aplicativo
 
 Em navegadores compatíveis, use a opção **Instalar ReShare** da barra de endereço ou do menu do navegador. A versão
@@ -64,7 +97,7 @@ bun run test:e2e
 
 `bun run lint` usa [oxlint](https://oxc.rs) com verificação type-aware via `tsgolint` (`oxlint --type-aware`); `bun run format` aplica o [oxfmt](https://oxc.rs) e `bun run format:check` valida. As configurações ficam em `.oxlintrc.json` e `.oxfmtrc.json`. `bun run knip` ([knip](https://knip.dev), config em `knip.json`) aponta arquivos, exports e dependências sem uso.
 
-O teste unitário do signaling cobre lotação, isolamento, autorização de relay, duas seleções simultâneas, publicações simultâneas, apelidos de participantes, mensagens inválidas, taxa e backpressure. Os testes de peers cobrem ICE recebido antes do SDP, sessões antigas e cleanup independente. O Playwright usa WebRTC real com vídeo e áudio sintéticos em múltiplas abas.
+O teste unitário do signaling cobre lotação, isolamento, autorização de relay, duas seleções simultâneas, publicações simultâneas, apelidos de participantes, papéis de dono e moderador (temporário e permanente), expulsão, troca de transporte, reivindicação de sala sem dono, mensagens inválidas, taxa e backpressure. `roomDb.test.ts` cobre os round-trips de hash e a varredura de retenção; `roomAdmin.test.ts`, os endpoints de moderadores e de recuperação, incluindo o limite de tentativas. Os testes de peers cobrem ICE recebido antes do SDP, sessões antigas e cleanup independente. O Playwright usa WebRTC real com vídeo e áudio sintéticos em múltiplas abas.
 
 Para duas máquinas, use o domínio HTTPS do Railway ou outro domínio com TLS válido. `getDisplayMedia()` exige contexto seguro; HTTP por IP da rede local não basta. Crie a sala no PC A, abra o mesmo convite no PC B e escolha a transmissão. Redes diferentes podem exigir TURN.
 
@@ -117,9 +150,16 @@ A mídia tem dois provedores atrás de uma mesma interface (`src/client/media/`)
   "quem publicou o quê" (`rt-publish` / `rt-unpublish`); o App Secret fica no
   servidor e o navegador só fala com o proxy `/realtime/*` da mesma origem.
 
-O provedor é escolhido em tempo de execução por `/config.json`, controlado pela
-variável `MEDIA_PROVIDER`. Trocar o valor e reiniciar troca o transporte de toda
-sessão nova, sem novo build; o rollback é voltar a variável. Não há servidor para
+`MEDIA_PROVIDER` define o **padrão para salas novas**, entregue em `/config.json`.
+O transporte que vale numa sala é o que o `joined` devolve: o dono ou um moderador
+pode trocá-lo em **Configurações**, e a escolha fica gravada na sala. Como mesh e SFU
+são grafos de conexão estruturalmente diferentes, não há troca a quente: ao receber
+`room-settings-changed` todo cliente derruba o provedor atual e reconecta com o novo,
+reaproveitando o `clientId` (o mesmo mecanismo do reconnect pós-redeploy) e a captura
+já em andamento, para quem transmite não precisar reescolher a tela. A interrupção dura
+alguns segundos e é anunciada antes, num diálogo de confirmação. `/config.json` também
+informa quais transportes o servidor realmente consegue servir, para a interface nunca
+oferecer um que não esteja configurado. Não há servidor para
 hospedar — só um app Cloudflare Realtime (dashboard → Realtime → SFU) e as
 variáveis `CLOUDFLARE_REALTIME_APP_ID` / `CLOUDFLARE_REALTIME_APP_SECRET`. Egress
 custa US$0,05/GB com 1.000 GB/mês grátis. Testes do modo Cloudflare:
@@ -130,14 +170,17 @@ custa US$0,05/GB com 1.000 GB/mês grátis. Testes do modo Cloudflare:
 
 A infraestrutura está em `.railway/railway.ts` e usa um único serviço `web`, uma réplica, health check `/health`, build `bun run build` e start `bun run start`. Consulte [.railway/README.md](.railway/README.md) para o procedimento de migração e deploy pela CLI.
 
-Defina `ROOM_TOKEN_SECRET` com pelo menos 32 caracteres aleatórios e preserve o valor entre deploys. Trocar ou perder esse segredo invalida todos os convites existentes. Em desenvolvimento, quando a variável não existe, é usado apenas um valor local fixo e inseguro.
+Defina `ROOM_TOKEN_SECRET` com pelo menos 32 caracteres aleatórios e preserve o valor entre deploys. Trocar ou perder esse segredo invalida todos os convites existentes — e também os tokens de dono, códigos de recuperação e grants de moderador, porque é a mesma chave dos HMACs gravados no SQLite. Em desenvolvimento, quando a variável não existe, é usado apenas um valor local fixo e inseguro.
+
+O SQLite exige um **volume montado** (`SQLITE_PATH=/data/rooms.sqlite` no volume `rooms-data`, já declarado na IaC). Sem ele o arquivo é recriado vazio a cada deploy e todo o controle das salas se perde em silêncio. Um arquivo SQLite tem um único escritor, então a contagem de réplicas segue em 1 — agora por dois motivos, não só pela presença em memória.
 
 ## Limitações
 
-- Sem contas ou recuperação administrativa: salas podem ser públicas ou protegidas; nome e eventual senha são imutáveis.
-- Participantes, identidades e seleções online desaparecem ao reiniciar o processo; convite e nome da sala permanecem válidos.
+- Sem contas nem login: dono, moderação e recuperação usam segredos portadores, então provam posse do segredo, não identidade. Nome e eventual senha da sala continuam imutáveis.
+- Participantes, identidades e seleções online desaparecem ao reiniciar o processo; convite, nome da sala, dono, moderadores permanentes e transporte escolhido permanecem.
+- Moderação temporária vale só para a conexão atual: desconectar rebaixa a pessoa a participante comum, por design.
 - Favoritos pertencem somente ao perfil atual do navegador e desaparecem ao limpar os dados do site.
-- Uma réplica; escalar exige estado compartilhado e afinidade ou outro desenho de signaling.
+- Uma réplica; escalar exige estado compartilhado e afinidade ou outro desenho de signaling, além de sair do SQLite (um único escritor) ou adicionar coordenação.
 - Sem SFU, gravação, chat, microfone ou retomada automática de ICE.
 - Cada participante assiste até duas transmissões por vez; isso aumenta o consumo de banda e processamento no receptor, e os áudios podem se sobrepor.
 - Qualidade e áudio variam por navegador, dispositivo e rede.

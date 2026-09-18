@@ -164,13 +164,25 @@ async function enterRoom(page: Page, name?: string) {
   // Wait for the controller to render before reading the gate: a stored alias keeps it
   // hidden and there is nothing to do, otherwise fill the name and enter.
   await gate.waitFor({ state: 'attached' });
-  if (await gate.isHidden()) return;
+  if (await gate.isHidden()) {
+    await dismissRecoveryCode(page);
+    return;
+  }
   if (name !== undefined)
     await page.getByLabel('Seu nome na sala', { exact: true }).fill(name);
   await page
     .getByRole('button', { name: 'Entrar na sala', exact: true })
     .click();
   await expect(gate).toBeHidden();
+  await dismissRecoveryCode(page);
+}
+// Quem acabou de criar (ou reivindicar) uma sala vê o código de recuperação uma única
+// vez, logo depois do name gate. Só aparece nesse caso, então a ausência é normal.
+async function dismissRecoveryCode(page: Page) {
+  const dialog = page.locator('[data-recovery-code]');
+  if (!(await dialog.isVisible().catch(() => false))) return;
+  await page.getByRole('button', { name: 'Já guardei', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
 }
 async function identity(page: Page) {
   return (await page.getByText(/^Você: /).innerText()).replace('Você: ', '');
@@ -736,4 +748,84 @@ test('a redeploy drops every socket at once and the room restores itself without
   await playing(a, 'blue', 1);
   await playing(b, 'red', 1);
   expect(errors).toEqual([]);
+});
+
+test('the host promotes a guest, who gains the moderation controls live and removes a third participant', async ({
+  page: host,
+  browser,
+}) => {
+  await host.goto('/');
+  await createProtectedRoom(host, 'Sala com dono');
+  await enterRoom(host, 'Dona');
+  // Quem cria a sala é dona dela; o crachá sai no room-state para todo mundo.
+  await expect(
+    host.locator('.member').filter({ hasText: 'Dona' }).getByText('Dono'),
+  ).toBeVisible();
+
+  const guestContext = await browser.newContext();
+  const guest = await guestContext.newPage();
+  await guest.goto(host.url());
+  await enterRoom(guest, 'Convidada');
+
+  const strangerContext = await browser.newContext();
+  const stranger = await strangerContext.newPage();
+  await stranger.goto(host.url());
+  await enterRoom(stranger, 'Terceira');
+  await expect(participantCount(guest)).toHaveText('3');
+
+  // Um guest não vê nenhuma ação de moderação, nem sobre si nem sobre os outros.
+  await expect(guest.getByRole('button', { name: /^Moderar / })).toHaveCount(0);
+  await guest.getByRole('button', { name: 'Configurações' }).click();
+  await expect(guest.getByLabel('Transporte de mídia desta sala')).toHaveCount(
+    0,
+  );
+
+  // A dona promove pela própria lista de participantes.
+  await host.getByRole('button', { name: 'Moderar Convidada' }).click();
+  await host
+    .getByRole('button', { name: 'Moderador nesta sessão', exact: true })
+    .click();
+
+  // O crachá e os controles aparecem ao vivo para a convidada, sem recarregar.
+  await expect(
+    guest
+      .locator('.member')
+      .filter({ hasText: 'Convidada' })
+      .getByText('Moderador'),
+  ).toBeVisible();
+  await expect(
+    guest.getByText('Transporte de mídia da sala', { exact: true }),
+  ).toBeVisible();
+  // Moderar não é promover: só a dona aparece com o menu de moderadores.
+  await expect(
+    guest.getByRole('button', { name: 'Moderar Terceira' }),
+  ).toBeVisible();
+  await guest.getByRole('button', { name: 'Moderar Terceira' }).click();
+  await expect(
+    guest.getByRole('button', { name: 'Moderador permanente', exact: true }),
+  ).toHaveCount(0);
+  // A dona nunca é alvo, nem de expulsão nem de rebaixamento.
+  await expect(guest.getByRole('button', { name: 'Moderar Dona' })).toHaveCount(
+    0,
+  );
+
+  // Uma moderadora pode remover participantes, e quem sai sabe por quê.
+  await guest.getByRole('button', { name: 'Remover da sala' }).click();
+  await expect(stranger.locator('[data-kicked]')).toBeVisible();
+  await expect(
+    stranger.getByText('Você foi removido da sala', { exact: true }),
+  ).toBeVisible();
+  await expect(participantCount(host)).toHaveText('2');
+
+  // Só a dona administra grants permanentes.
+  await host.getByRole('button', { name: 'Configurações' }).click();
+  await expect(
+    host.getByText('Moderadores permanentes', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    guest.getByText('Moderadores permanentes', { exact: true }),
+  ).toHaveCount(0);
+
+  await guestContext.close();
+  await strangerContext.close();
 });

@@ -1,16 +1,21 @@
 import {
   clientMessageSchema,
+  KICKED_CLOSE_CODE,
   MAX_WATCHED_STREAMS,
+  type MediaProviderKind,
+  type RoomRole,
   type RtPublication,
   type ServerMessage,
 } from '../src/lib/signaling/messages';
 import {
+  generateRoomSecret,
   issueRoomAccessToken,
   issueRoomCredential,
   verifyRoomAccessToken,
   verifyRoomCredential,
   verifyRoomPassword,
 } from './roomCredentials';
+import type { RoomDb } from './roomDb';
 
 export type SignalingSocket = {
   send(message: string): number;
@@ -34,19 +39,47 @@ export type Client = {
   count: number;
   window: number;
   failedRoomAttempts: number;
+  // Resolvidos uma vez no join e confiados pelo resto da conexão, igual ao accessToken.
+  // `moderator` temporário existe só aqui: um Client novo nasce a cada upgrade de WS,
+  // então a promoção temporária morre com a conexão — comportamento pretendido.
+  role: RoomRole;
+  memberId?: string;
 };
-type Room = { name: string; members: Map<string, Client> };
+type Room = {
+  name: string;
+  members: Map<string, Client>;
+  mediaProvider: MediaProviderKind;
+};
+
+export type SignalingOptions = {
+  db: RoomDb;
+  maxRoomParticipants?: number;
+  defaultMediaProvider?: MediaProviderKind;
+  availableMediaProviders?: MediaProviderKind[];
+};
 
 export class SignalingHub {
   readonly rooms = new Map<string, Room>();
   readonly clients = new Set<Client>();
 
+  private readonly db: RoomDb;
+  private readonly maxRoomParticipants?: number;
+  private readonly defaultMediaProvider: MediaProviderKind;
+  private readonly availableMediaProviders: MediaProviderKind[];
+
   // maxRoomParticipants ausente = sem limite. Aplicado no join-room, que os dois
   // modos usam para presença.
   constructor(
     private readonly roomTokenSecret: string,
-    private readonly maxRoomParticipants?: number,
-  ) {}
+    options: SignalingOptions,
+  ) {
+    this.db = options.db;
+    this.maxRoomParticipants = options.maxRoomParticipants;
+    this.defaultMediaProvider = options.defaultMediaProvider ?? 'webrtc';
+    this.availableMediaProviders = options.availableMediaProviders ?? [
+      'webrtc',
+    ];
+  }
 
   createClient(): Client {
     return {
@@ -57,6 +90,7 @@ export class SignalingHub {
       count: 0,
       window: Date.now(),
       failedRoomAttempts: 0,
+      role: 'guest',
     };
   }
 
@@ -85,6 +119,10 @@ export class SignalingHub {
       sharing: client.sharing,
       alias: client.alias ?? null,
       rt: client.rtPublication ?? null,
+      // Só o papel derivado sai daqui. memberId e hostToken jamais entram em
+      // broadcast: conhecer o memberId de alguém permitiria assumir o grant dessa
+      // pessoa no próximo join.
+      role: client.role,
     }));
   }
 
@@ -178,6 +216,12 @@ export class SignalingHub {
         return;
       }
       const roomId = crypto.randomUUID();
+      // Dono e código de recuperação nascem com a sala e são entregues uma única vez;
+      // o servidor guarda só os HMACs. A credencial de convite continua sendo a fonte
+      // da verdade para nome e senha — nada disso é duplicado no banco.
+      const hostToken = generateRoomSecret();
+      const recoveryCode = generateRoomSecret();
+      this.db.createRoom(roomId, hostToken, recoveryCode);
       this.send(client, {
         type: 'room-created',
         roomId,
@@ -189,6 +233,8 @@ export class SignalingHub {
           message.password,
         ),
         passwordProtected: Boolean(message.password),
+        hostToken,
+        recoveryCode,
       });
       return;
     }
@@ -254,11 +300,31 @@ export class SignalingHub {
           return;
         }
       }
+      // A linha da sala pode não existir: salas abertas de um convite salvo de antes
+      // deste recurso nunca tiveram uma. Isso é o caso normal logo após o rollout, não
+      // uma exceção — quem resolve é `claim-host`, não uma criação silenciosa aqui.
+      const persisted = this.db.getRoom(message.roomId);
+      const memberId = message.memberId ?? crypto.randomUUID();
+      client.memberId = memberId;
+      client.role = !persisted
+        ? 'guest'
+        : message.hostToken &&
+            this.db.verifyHostToken(message.roomId, message.hostToken)
+          ? 'host'
+          : this.db.isActiveModerator(message.roomId, memberId)
+            ? 'moderator'
+            : 'guest';
+      if (persisted) this.db.touchRoom(message.roomId);
       let room = this.rooms.get(message.roomId);
       if (!room) {
-        room = { name: verified.room.roomName, members: new Map() };
+        room = {
+          name: verified.room.roomName,
+          members: new Map(),
+          mediaProvider: persisted?.mediaProvider ?? this.defaultMediaProvider,
+        };
         this.rooms.set(message.roomId, room);
-      }
+      } else if (persisted?.mediaProvider)
+        room.mediaProvider = persisted.mediaProvider;
       if (
         this.maxRoomParticipants &&
         room.members.size >= this.maxRoomParticipants
@@ -298,6 +364,10 @@ export class SignalingHub {
         accessToken,
         accessTokenExpiresAt,
         peerId: client.id,
+        role: client.role,
+        memberId,
+        mediaProvider: room.mediaProvider,
+        hostClaimable: !persisted,
         peers: this.participants(room),
       });
       this.broadcast(room);
@@ -391,6 +461,109 @@ export class SignalingHub {
       }
       return;
     }
+    const roomId = client.roomId!;
+    if (message.type === 'claim-host') {
+      // Salas criadas antes deste recurso não têm linha nem hostToken, então ninguém
+      // pode ser dono. Reivindicar é a única ponte: transforma a corrida invisível de
+      // "quem reconectou primeiro depois do deploy" numa corrida explícita e opcional.
+      const hostToken = generateRoomSecret();
+      const recoveryCode = generateRoomSecret();
+      if (
+        this.db.getRoom(roomId) ||
+        !this.db.createRoom(roomId, hostToken, recoveryCode)
+      ) {
+        fail('Esta sala já tem um dono.');
+        return;
+      }
+      client.role = 'host';
+      this.send(client, { type: 'host-claimed', hostToken, recoveryCode });
+      this.broadcast(room);
+      return;
+    }
+    if (message.type === 'set-room-media-provider') {
+      if (client.role === 'guest') {
+        fail('Só o dono ou moderadores podem trocar o transporte de mídia.');
+        return;
+      }
+      if (!this.availableMediaProviders.includes(message.provider)) {
+        fail('Este servidor não tem esse transporte de mídia configurado.');
+        return;
+      }
+      if (room.mediaProvider === message.provider) return;
+      if (!this.db.setMediaProvider(roomId, message.provider)) {
+        fail(
+          'Reivindique o controle da sala antes de alterar as configurações.',
+        );
+        return;
+      }
+      room.mediaProvider = message.provider;
+      // Vai para todo mundo, inclusive quem enviou: mesh e SFU são transportes
+      // estruturalmente diferentes, então cada cliente derruba o provedor atual e
+      // reconecta com o novo. Não há como trocar a quente.
+      const changed: ServerMessage = {
+        type: 'room-settings-changed',
+        mediaProvider: message.provider,
+      };
+      for (const member of room.members.values()) this.send(member, changed);
+      return;
+    }
+    if (
+      message.type === 'grant-moderator' ||
+      message.type === 'revoke-moderator' ||
+      message.type === 'kick-peer'
+    ) {
+      // Autorizado só pelo client.role já resolvido no join, como `sharing-started`
+      // confia no estado do hub: nenhum segredo é reapresentado por ação.
+      const allowed =
+        message.type === 'kick-peer'
+          ? client.role !== 'guest'
+          : client.role === 'host';
+      if (!allowed) {
+        fail(
+          message.type === 'kick-peer'
+            ? 'Só o dono ou moderadores podem remover participantes.'
+            : 'Só o dono da sala pode alterar moderadores.',
+        );
+        return;
+      }
+      const subject = room.members.get(message.targetPeerId);
+      if (!subject || subject === client) {
+        fail('Destino inválido.');
+        return;
+      }
+      if (subject.role === 'host') {
+        fail('O dono da sala não pode ser removido nem rebaixado.');
+        return;
+      }
+      this.db.touchRoom(roomId);
+      if (message.type === 'kick-peer') {
+        this.send(subject, {
+          type: 'kicked',
+          by: client.role === 'host' ? 'host' : 'moderator',
+        });
+        subject.socket?.close(KICKED_CLOSE_CODE, 'Removido da sala');
+        this.leave(subject);
+        return;
+      }
+      if (message.type === 'grant-moderator') {
+        // Permanente grava o hash do memberId; temporário fica só no Client e some
+        // no próximo disconnect, por design.
+        subject.role = 'moderator';
+        if (
+          message.permanent &&
+          subject.memberId &&
+          !this.db.grantModerator(roomId, subject.memberId)
+        )
+          fail(
+            'Esta sala não está mais registrada: a moderação vale só nesta sessão.',
+          );
+      } else {
+        if (subject.memberId) this.db.revokeModerator(roomId, subject.memberId);
+        subject.role = 'guest';
+      }
+      this.broadcast(room);
+      return;
+    }
     const target = room.members.get(message.targetPeerId);
     if (!target || target === client) {
       fail('Destino inválido.');
@@ -412,6 +585,29 @@ export class SignalingHub {
     const { targetPeerId: _target, ...payload } = message;
     void _target;
     this.send(target, { ...payload, peerId: client.id });
+  }
+
+  // A revogação pelo endpoint HTTP conhece só o hash do memberId (o valor cru nunca é
+  // guardado), então o rebaixamento ao vivo compara pelo hash.
+  demoteModeratorByHash(roomId: string, memberIdHash: string) {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+    let changed = false;
+    for (const member of room.members.values()) {
+      if (
+        member.role !== 'moderator' ||
+        !member.memberId ||
+        this.db.hashMemberId(member.memberId) !== memberIdHash
+      )
+        continue;
+      member.role = 'guest';
+      changed = true;
+    }
+    if (changed) this.broadcast(room);
+  }
+
+  pruneStaleRooms(retentionDays: number) {
+    return this.db.pruneStaleRooms(retentionDays);
   }
 
   heartbeat() {

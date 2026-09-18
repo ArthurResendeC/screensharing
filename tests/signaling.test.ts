@@ -8,12 +8,20 @@ import {
   type Client,
   type SignalingSocket,
 } from '../server/signaling';
+import { RoomDb } from '../server/roomDb';
 import {
   issueRoomAccessToken,
   issueRoomCredential,
 } from '../server/roomCredentials';
 
 const ROOM_SECRET = 'test-room-token-secret-at-least-32-characters';
+
+// Um banco em memória por hub: `bun:sqlite` aceita ':memory:', então nenhum teste
+// toca o disco nem compartilha estado com outro.
+const memoryDb = () => new RoomDb(ROOM_SECRET);
+const hubWith = (
+  options: Partial<ConstructorParameters<typeof SignalingHub>[1]> = {},
+) => new SignalingHub(ROOM_SECRET, { db: memoryDb(), ...options });
 const ROOM_PASSWORD = 'correct horse battery staple';
 
 function authorized(message: unknown) {
@@ -90,7 +98,7 @@ test('signed rooms preserve their name across hubs and reject invalid access', (
       send: (message: unknown) => hub.message(client, JSON.stringify(message)),
     };
   };
-  const firstHub = new SignalingHub(ROOM_SECRET);
+  const firstHub = hubWith();
   const creator = connect(firstHub);
   creator.send({
     type: 'create-room',
@@ -151,7 +159,7 @@ test('signed rooms preserve their name across hubs and reject invalid access', (
   });
   firstHub.close();
 
-  const restartedHub = new SignalingHub(ROOM_SECRET);
+  const restartedHub = hubWith();
   try {
     const participant = connect(restartedHub);
     participant.send({
@@ -189,9 +197,10 @@ test('signed rooms preserve their name across hubs and reject invalid access', (
       reason: 'password-required',
     });
 
-    const foreignHub = new SignalingHub(
-      'different-room-token-secret-at-least-32-chars',
-    );
+    const foreignSecret = 'different-room-token-secret-at-least-32-chars';
+    const foreignHub = new SignalingHub(foreignSecret, {
+      db: new RoomDb(foreignSecret),
+    });
     const foreign = connect(foreignHub);
     foreign.send({
       type: 'join-room',
@@ -210,7 +219,7 @@ test('signed rooms preserve their name across hubs and reject invalid access', (
 });
 
 test('rooms without a password can be joined directly and do not issue access tokens', () => {
-  const hub = new SignalingHub(ROOM_SECRET);
+  const hub = hubWith();
   const connect = () => {
     const client = hub.createClient();
     const socket = new FakeSocket();
@@ -244,7 +253,7 @@ test('rooms without a password can be joined directly and do not issue access to
 });
 
 test('a protected room accepts a single-character password', () => {
-  const hub = new SignalingHub(ROOM_SECRET);
+  const hub = hubWith();
   const client = hub.createClient();
   const socket = new FakeSocket();
   hub.open(client, socket);
@@ -275,7 +284,7 @@ test('a protected room accepts a single-character password', () => {
 });
 
 test('room subscriptions: two selections, reciprocal watching, isolation and independent lifecycle', () => {
-  const hub = new SignalingHub(ROOM_SECRET);
+  const hub = hubWith();
   const connect = (): Peer => {
     const client = hub.createClient();
     const socket = new FakeSocket();
@@ -454,7 +463,7 @@ test('room subscriptions: two selections, reciprocal watching, isolation and ind
 });
 
 test('rooms accept ten participants and reject the eleventh', () => {
-  const hub = new SignalingHub(ROOM_SECRET, 10);
+  const hub = hubWith({ maxRoomParticipants: 10 });
   try {
     const roomId = crypto.randomUUID();
     for (let index = 0; index < 10; index++) {
@@ -485,7 +494,7 @@ test('rooms accept ten participants and reject the eleventh', () => {
 });
 
 test('without a configured cap the room accepts more than ten participants', () => {
-  const hub = new SignalingHub(ROOM_SECRET);
+  const hub = hubWith();
   try {
     const roomId = crypto.randomUUID();
     for (let index = 0; index < 13; index++) {
@@ -505,7 +514,7 @@ test('without a configured cap the room accepts more than ten participants', () 
 });
 
 test('participant aliases: trimmed, capped, broadcast to the room and reset on leave', () => {
-  const hub = new SignalingHub(ROOM_SECRET);
+  const hub = hubWith();
   const connect = () => {
     const client = hub.createClient();
     const socket = new FakeSocket();
@@ -562,7 +571,7 @@ test('participant aliases: trimmed, capped, broadcast to the room and reset on l
 });
 
 test('rt-publish / rt-unpublish carry the Cloudflare tracks and reset on leave', () => {
-  const hub = new SignalingHub(ROOM_SECRET);
+  const hub = hubWith();
   const connect = () => {
     const client = hub.createClient();
     const socket = new FakeSocket();
@@ -628,7 +637,7 @@ test('rt-publish / rt-unpublish carry the Cloudflare tracks and reset on leave',
 });
 
 test('rate, payload and backpressure failures do not crash the hub', () => {
-  const hub = new SignalingHub(ROOM_SECRET);
+  const hub = hubWith();
   const client = hub.createClient();
   const socket = new FakeSocket();
   hub.open(client, socket);
@@ -647,7 +656,7 @@ test('rate, payload and backpressure failures do not crash the hub', () => {
 });
 
 test('ping is answered with pong without needing a room', () => {
-  const hub = new SignalingHub(ROOM_SECRET);
+  const hub = hubWith();
   const client = hub.createClient();
   const socket = new FakeSocket();
   hub.open(client, socket);
@@ -657,7 +666,7 @@ test('ping is answered with pong without needing a room', () => {
 });
 
 test('a reconnecting client reclaims its previous peer id', () => {
-  const hub = new SignalingHub(ROOM_SECRET);
+  const hub = hubWith();
   const roomId = crypto.randomUUID();
   const clientId = crypto.randomUUID();
   const join = () => {
@@ -687,7 +696,7 @@ test('a reconnecting client reclaims its previous peer id', () => {
 });
 
 test('a reconnect race evicts the stale connection instead of duplicating the participant', () => {
-  const hub = new SignalingHub(ROOM_SECRET);
+  const hub = hubWith();
   const roomId = crypto.randomUUID();
   const clientId = crypto.randomUUID();
   const join = () => {
@@ -724,6 +733,311 @@ test('a reconnect race evicts the stale connection instead of duplicating the pa
     second.socket.inbox.length = 0;
     hub.leave(first.client);
     expect(second.socket.inbox).toHaveLength(0);
+  } finally {
+    hub.close();
+  }
+});
+
+// ---- dono, moderadores e transporte por sala ----
+
+type RoomPeer = {
+  client: Client;
+  socket: FakeSocket;
+  send(message: unknown): void;
+};
+
+// `take` devolve a primeira ocorrência; nestes testes cada join da sala já empilhou
+// vários room-state, então o que interessa é sempre o mais recente.
+function latest(socket: FakeSocket, type: ServerMessage['type']) {
+  const found = [...socket.inbox].reverse().find(entry => entry.type === type);
+  if (!found) throw new Error(`Mensagem ${type} não encontrada`);
+  socket.inbox = socket.inbox.filter(entry => entry.type !== type);
+  return found;
+}
+
+function hostFixture(
+  options: Partial<ConstructorParameters<typeof SignalingHub>[1]> = {},
+) {
+  const db = new RoomDb(ROOM_SECRET);
+  const hub = new SignalingHub(ROOM_SECRET, { db, ...options });
+  const connect = (): RoomPeer => {
+    const client = hub.createClient();
+    const socket = new FakeSocket();
+    hub.open(client, socket);
+    return {
+      client,
+      socket,
+      send: message => hub.message(client, JSON.stringify(message)),
+    };
+  };
+  const creator = connect();
+  creator.send({ type: 'create-room', name: 'Sala com dono' });
+  const created = creator.socket.take('room-created');
+  if (created.type !== 'room-created') throw new Error();
+  const join = (peer: RoomPeer, extra: Record<string, unknown> = {}) => {
+    peer.send({
+      type: 'join-room',
+      roomId: created.roomId,
+      credential: created.credential,
+      ...extra,
+    });
+    const joined = peer.socket.take('joined');
+    if (joined.type !== 'joined') throw new Error();
+    return joined;
+  };
+  return { db, hub, connect, created, join };
+}
+
+test('create-room issues host secrets and only the right token yields the host role', () => {
+  const { hub, connect, created, join } = hostFixture();
+  try {
+    expect(created.hostToken).toMatch(/^[A-Za-z0-9_-]{16,128}$/);
+    expect(created.recoveryCode).not.toBe(created.hostToken);
+
+    const host = connect();
+    const asHost = join(host, { hostToken: created.hostToken });
+    expect(asHost.role).toBe('host');
+    expect(asHost.hostClaimable).toBeFalse();
+    expect(asHost.mediaProvider).toBe('webrtc');
+
+    const guest = connect();
+    expect(join(guest).role).toBe('guest');
+
+    const impostor = connect();
+    expect(join(impostor, { hostToken: created.recoveryCode }).role).toBe(
+      'guest',
+    );
+
+    // O papel aparece no room-state, e nada além dele: nem memberId nem token.
+    const state = latest(host.socket, 'room-state');
+    if (state.type !== 'room-state') throw new Error();
+    expect(state.peers.map(peer => peer.role).sort()).toEqual([
+      'guest',
+      'guest',
+      'host',
+    ]);
+    for (const peer of state.peers)
+      expect(Object.keys(peer).sort()).toEqual([
+        'alias',
+        'peerId',
+        'role',
+        'rt',
+        'sharing',
+      ]);
+  } finally {
+    hub.close();
+  }
+});
+
+test('a temporary moderator grant is lost on reconnect; a permanent one is restored', () => {
+  const { hub, connect, created, join } = hostFixture();
+  try {
+    const host = connect();
+    join(host, { hostToken: created.hostToken });
+
+    const temporaryMember = crypto.randomUUID();
+    const temporary = connect();
+    join(temporary, { memberId: temporaryMember });
+    host.send({
+      type: 'grant-moderator',
+      targetPeerId: temporary.client.id,
+      permanent: false,
+    });
+    const promoted = latest(temporary.socket, 'room-state');
+    if (promoted.type !== 'room-state') throw new Error();
+    expect(
+      promoted.peers.find(peer => peer.peerId === temporary.client.id)?.role,
+    ).toBe('moderator');
+
+    // Uma conexão nova é um Client novo: a promoção temporária não sobrevive a ela.
+    hub.leave(temporary.client);
+    const rejoinedTemporary = connect();
+    expect(join(rejoinedTemporary, { memberId: temporaryMember }).role).toBe(
+      'guest',
+    );
+
+    const permanentMember = crypto.randomUUID();
+    const permanent = connect();
+    join(permanent, { memberId: permanentMember });
+    host.send({
+      type: 'grant-moderator',
+      targetPeerId: permanent.client.id,
+      permanent: true,
+    });
+    hub.leave(permanent.client);
+    const rejoinedPermanent = connect();
+    expect(join(rejoinedPermanent, { memberId: permanentMember }).role).toBe(
+      'moderator',
+    );
+    // O grant é do memberId, não do navegador que por acaso reconectou.
+    const stranger = connect();
+    expect(join(stranger, { memberId: crypto.randomUUID() }).role).toBe(
+      'guest',
+    );
+  } finally {
+    hub.close();
+  }
+});
+
+test('privileged actions are authorized by role, and the host is never a target', () => {
+  const { hub, connect, created, join } = hostFixture({
+    availableMediaProviders: ['webrtc', 'cloudflare'],
+  });
+  try {
+    const host = connect();
+    join(host, { hostToken: created.hostToken });
+    const moderator = connect();
+    join(moderator, { memberId: crypto.randomUUID() });
+    const guest = connect();
+    join(guest, { memberId: crypto.randomUUID() });
+    host.send({
+      type: 'grant-moderator',
+      targetPeerId: moderator.client.id,
+      permanent: false,
+    });
+
+    // Promover é só do dono, mesmo para quem já modera.
+    moderator.send({
+      type: 'grant-moderator',
+      targetPeerId: guest.client.id,
+      permanent: false,
+    });
+    expect(moderator.socket.take('error').type).toBe('error');
+    guest.send({ type: 'kick-peer', targetPeerId: moderator.client.id });
+    expect(guest.socket.take('error').type).toBe('error');
+    guest.send({ type: 'set-room-media-provider', provider: 'cloudflare' });
+    expect(guest.socket.take('error').type).toBe('error');
+    moderator.send({ type: 'kick-peer', targetPeerId: host.client.id });
+    expect(moderator.socket.take('error').type).toBe('error');
+    expect(host.socket.closed).toBeFalse();
+
+    // Moderador pode trocar o transporte, e todo mundo é avisado — inclusive quem
+    // pediu, porque todos precisam refazer a conexão no transporte novo.
+    moderator.send({ type: 'set-room-media-provider', provider: 'cloudflare' });
+    for (const peer of [host, moderator, guest])
+      expect(peer.socket.take('room-settings-changed')).toEqual({
+        type: 'room-settings-changed',
+        mediaProvider: 'cloudflare',
+      });
+    const rejoin = connect();
+    expect(join(rejoin, {}).mediaProvider).toBe('cloudflare');
+
+    // Moderador pode expulsar: o alvo recebe o aviso e sai da sala.
+    moderator.send({ type: 'kick-peer', targetPeerId: guest.client.id });
+    expect(guest.socket.take('kicked')).toEqual({
+      type: 'kicked',
+      by: 'moderator',
+    });
+    expect(guest.socket.closed).toBeTrue();
+    const afterKick = latest(host.socket, 'room-state');
+    if (afterKick.type !== 'room-state') throw new Error();
+    expect(
+      afterKick.peers.some(peer => peer.peerId === guest.client.id),
+    ).toBeFalse();
+  } finally {
+    hub.close();
+  }
+});
+
+test('a transport the server cannot serve is refused', () => {
+  const { hub, connect, created, join } = hostFixture();
+  try {
+    const host = connect();
+    join(host, { hostToken: created.hostToken });
+    host.send({ type: 'set-room-media-provider', provider: 'cloudflare' });
+    expect(host.socket.take('error').type).toBe('error');
+    const rejoin = connect();
+    expect(join(rejoin, {}).mediaProvider).toBe('webrtc');
+  } finally {
+    hub.close();
+  }
+});
+
+test('revoking a moderator drops both the live role and the permanent grant', () => {
+  const { db, hub, connect, created, join } = hostFixture();
+  try {
+    const host = connect();
+    join(host, { hostToken: created.hostToken });
+    const memberId = crypto.randomUUID();
+    const moderator = connect();
+    join(moderator, { memberId });
+    host.send({
+      type: 'grant-moderator',
+      targetPeerId: moderator.client.id,
+      permanent: true,
+    });
+    expect(db.isActiveModerator(created.roomId, memberId)).toBeTrue();
+
+    host.send({ type: 'revoke-moderator', targetPeerId: moderator.client.id });
+    expect(moderator.client.role).toBe('guest');
+    expect(db.isActiveModerator(created.roomId, memberId)).toBeFalse();
+
+    // Revogar pelo endpoint HTTP rebaixa a conexão ao vivo pelo hash do memberId.
+    host.send({
+      type: 'grant-moderator',
+      targetPeerId: moderator.client.id,
+      permanent: true,
+    });
+    const grant = db.listModerators(created.roomId)[0]!;
+    const hash = db.revokeModeratorById(created.roomId, grant.id);
+    hub.demoteModeratorByHash(created.roomId, hash!);
+    expect(moderator.client.role).toBe('guest');
+  } finally {
+    hub.close();
+  }
+});
+
+test('a room with no row is claimable exactly once', () => {
+  const db = new RoomDb(ROOM_SECRET);
+  const hub = new SignalingHub(ROOM_SECRET, { db });
+  const connect = (): RoomPeer => {
+    const client = hub.createClient();
+    const socket = new FakeSocket();
+    hub.open(client, socket);
+    return {
+      client,
+      socket,
+      send: message => hub.message(client, JSON.stringify(message)),
+    };
+  };
+  try {
+    // Uma sala aberta de um convite salvo de antes deste recurso: credencial válida,
+    // nenhuma linha no banco, portanto ninguém é dono.
+    const roomId = crypto.randomUUID();
+    const credential = issueRoomCredential(ROOM_SECRET, roomId, 'Sala antiga');
+    const join = (peer: RoomPeer) => {
+      peer.send({ type: 'join-room', roomId, credential });
+      const joined = peer.socket.take('joined');
+      if (joined.type !== 'joined') throw new Error();
+      return joined;
+    };
+
+    const first = connect();
+    const second = connect();
+    // Todos veem a opção, não só quem entrou primeiro.
+    const firstJoin = join(first);
+    expect(firstJoin.hostClaimable).toBeTrue();
+    expect(firstJoin.role).toBe('guest');
+    expect(join(second).hostClaimable).toBeTrue();
+
+    first.send({ type: 'claim-host' });
+    const claimed = first.socket.take('host-claimed');
+    if (claimed.type !== 'host-claimed') throw new Error();
+    expect(first.client.role).toBe('host');
+    expect(db.verifyHostToken(roomId, claimed.hostToken)).toBeTrue();
+
+    // Quem perde a corrida recebe um erro simples e continua guest; o room-state que
+    // já está a caminho mostra o crachá do novo dono.
+    second.send({ type: 'claim-host' });
+    expect(second.socket.take('error').type).toBe('error');
+    expect(second.client.role).toBe('guest');
+
+    const late = connect();
+    const lateJoin = join(late);
+    expect(lateJoin.hostClaimable).toBeFalse();
+    expect(
+      lateJoin.peers.find(peer => peer.peerId === first.client.id)?.role,
+    ).toBe('host');
   } finally {
     hub.close();
   }

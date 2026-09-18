@@ -4,12 +4,15 @@ import {
   roomCredentialSchema,
   roomIdSchema,
   roomNameSchema,
+  roomSecretSchema,
 } from '../lib/signaling/messages';
 
 const FAVORITES_KEY = 'screen-share:favorite-rooms';
 const RECENT_KEY = 'screen-share:last-room-v2';
 const LEGACY_RECENT_KEY = 'screen-share:last-room';
 const ACCESS_KEY = 'screen-share:room-access-v1';
+const HOST_KEY = 'screen-share:room-host-v1';
+const MEMBER_KEY = 'screen-share:room-member-v1';
 
 const storedRoomSchema = z
   .object({
@@ -36,6 +39,24 @@ const accessListSchema = z
   .object({ version: z.literal(1), rooms: z.array(z.unknown()) })
   .strict();
 
+const hostCredentialsSchema = z
+  .object({
+    roomId: roomIdSchema,
+    hostToken: roomSecretSchema,
+    recoveryCode: roomSecretSchema,
+  })
+  .strict();
+const hostListSchema = z
+  .object({ version: z.literal(1), rooms: z.array(z.unknown()) })
+  .strict();
+const memberSchema = z
+  .object({ roomId: roomIdSchema, memberId: z.string().uuid() })
+  .strict();
+const memberListSchema = z
+  .object({ version: z.literal(1), rooms: z.array(z.unknown()) })
+  .strict();
+
+export type HostCredentials = z.infer<typeof hostCredentialsSchema>;
 export type StoredRoom = z.infer<typeof storedRoomSchema>;
 export type RoomInvite = Pick<
   StoredRoom,
@@ -149,6 +170,62 @@ export function findRoomAccess(roomId: string, credential: string) {
   return listRoomAccess().find(
     entry => entry.roomId === roomId && entry.credential === credential,
   );
+}
+
+// --- credenciais de dono e identidade de membro (por sala) ---
+
+function writeJson(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Sem armazenamento a sessão atual continua funcionando; o que se perde é a
+    // retomada silenciosa do papel de dono na próxima visita.
+  }
+}
+
+function listHostCredentials(): HostCredentials[] {
+  const parsed = hostListSchema.safeParse(readJson(HOST_KEY));
+  if (!parsed.success) return [];
+  return parsed.data.rooms.flatMap(room => {
+    const entry = hostCredentialsSchema.safeParse(room);
+    return entry.success ? [entry.data] : [];
+  });
+}
+
+// Gravado uma vez, no `room-created` ou no `host-claimed`. O hostToken é reenviado em
+// silêncio a cada join; o recoveryCode fica guardado só para quem criou conseguir
+// rever o código neste mesmo navegador.
+export function saveHostCredentials(entry: HostCredentials) {
+  const rooms = listHostCredentials().filter(
+    room => room.roomId !== entry.roomId,
+  );
+  rooms.unshift(entry);
+  writeJson(HOST_KEY, { version: 1, rooms: rooms.slice(0, 50) });
+}
+
+export function findHostToken(roomId: string): string | undefined {
+  return listHostCredentials().find(room => room.roomId === roomId)?.hostToken;
+}
+
+// Identidade opaca "este navegador, nesta sala". Não é conta: é o único jeito de
+// reconhecer a mesma pessoa entre reconexões sem login. É tratada como segredo — o
+// servidor só devolve o papel derivado, nunca o memberId de ninguém.
+export function ensureMemberId(roomId: string): string {
+  const parsed = memberListSchema.safeParse(readJson(MEMBER_KEY));
+  const rooms = parsed.success
+    ? parsed.data.rooms.flatMap(room => {
+        const entry = memberSchema.safeParse(room);
+        return entry.success ? [entry.data] : [];
+      })
+    : [];
+  const existing = rooms.find(room => room.roomId === roomId);
+  if (existing) return existing.memberId;
+  const memberId = crypto.randomUUID();
+  writeJson(MEMBER_KEY, {
+    version: 1,
+    rooms: [{ roomId, memberId }, ...rooms].slice(0, 50),
+  });
+  return memberId;
 }
 
 export function recallRecentRoom() {

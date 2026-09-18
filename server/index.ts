@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import homepage from '../src/client/index.html';
 import icon192 from '../src/client/assets/icon-192.png' with { type: 'file' };
 import icon512 from '../src/client/assets/icon-512.png' with { type: 'file' };
@@ -5,6 +7,8 @@ import maskableIcon512 from '../src/client/assets/icon-maskable-512.png' with { 
 import manifest from '../src/client/manifest.webmanifest' with { type: 'text' };
 import serviceWorker from '../src/client/service-worker.js' with { type: 'text' };
 import { createRealtimeProxy } from './realtime/proxy';
+import { createRoomAdminRoutes } from './roomAdmin';
+import { RoomDb } from './roomDb';
 import { SignalingHub, type Client, type SignalingSocket } from './signaling';
 
 const port = Number(process.env.PORT ?? 3000);
@@ -19,6 +23,11 @@ if (mediaProvider === 'cloudflare' && (!cfAppId || !cfAppSecret))
   throw new Error(
     'MEDIA_PROVIDER=cloudflare exige CLOUDFLARE_REALTIME_APP_ID e CLOUDFLARE_REALTIME_APP_SECRET.',
   );
+// MEDIA_PROVIDER agora é só o padrão de salas novas: cada sala pode sobrescrevê-lo.
+// Portanto o que o servidor consegue servir depende das credenciais, não do padrão.
+const cloudflareConfigured = Boolean(cfAppId && cfAppSecret);
+const availableMediaProviders: ('webrtc' | 'cloudflare')[] =
+  cloudflareConfigured ? ['webrtc', 'cloudflare'] : ['webrtc'];
 
 const turnConfig = process.env.TURN_URL
   ? {
@@ -47,23 +56,46 @@ if (
   throw new Error('ROOM_TOKEN_SECRET deve ter pelo menos 32 caracteres.');
 const roomTokenSecret =
   configuredRoomTokenSecret || 'development-only-room-token-secret-change-me';
-const hub = new SignalingHub(roomTokenSecret, maxRoomParticipants);
+// SQLite guarda dono, moderadores permanentes e o transporte escolhido por sala. Em
+// produção SQLITE_PATH precisa apontar para um volume montado: sem isso cada redeploy
+// apaga os hostTokens e os grants, esvaziando o sentido de "permanente".
+const sqlitePath = process.env.SQLITE_PATH ?? './data/rooms.sqlite';
+// `bun:sqlite` cria o arquivo, mas não o diretório: sem isto o primeiro boot num
+// volume ainda vazio falharia.
+mkdirSync(dirname(sqlitePath), { recursive: true });
+const roomDb = new RoomDb(roomTokenSecret, sqlitePath);
+const retentionDays = Number(process.env.ROOM_RETENTION_DAYS ?? 30);
+if (!Number.isFinite(retentionDays) || retentionDays <= 0)
+  throw new Error('ROOM_RETENTION_DAYS inválido.');
+const hub = new SignalingHub(roomTokenSecret, {
+  db: roomDb,
+  maxRoomParticipants,
+  defaultMediaProvider: mediaProvider,
+  availableMediaProviders,
+});
+const roomAdmin = createRoomAdminRoutes({
+  db: roomDb,
+  onModeratorRevoked: (roomId, memberIdHash) =>
+    hub.demoteModeratorByHash(roomId, memberIdHash),
+});
 const iconHeaders = { 'cache-control': 'public, max-age=604800' };
 
 // Proxy sem estado para o SFU Cloudflare Realtime (valida a sala, esconde o App
 // Secret). Só existe quando configurado, para deploys WebRTC não mudarem.
-const realtimeProxy =
-  mediaProvider === 'cloudflare'
-    ? createRealtimeProxy({
-        roomTokenSecret,
-        appId: cfAppId,
-        appSecret: cfAppSecret,
-        iceServers: [
-          { urls: 'stun:stun.cloudflare.com:3478' },
-          ...(turnConfig?.urls ? [turnConfig as RTCIceServer] : []),
-        ],
-      })
-    : null;
+// Montado sempre que houver credenciais, e não só quando o padrão do servidor for
+// cloudflare: com override por sala, um servidor cujo padrão é webrtc ainda precisa
+// atender uma sala cujo dono escolheu o SFU.
+const realtimeProxy = cloudflareConfigured
+  ? createRealtimeProxy({
+      roomTokenSecret,
+      appId: cfAppId,
+      appSecret: cfAppSecret,
+      iceServers: [
+        { urls: 'stun:stun.cloudflare.com:3478' },
+        ...(turnConfig?.urls ? [turnConfig as RTCIceServer] : []),
+      ],
+    })
+  : null;
 
 function originAllowed(request: Request) {
   const origin = request.headers.get('origin');
@@ -129,6 +161,9 @@ const server = Bun.serve<Client>({
       Response.json(
         {
           mediaProvider,
+          // Padrão do servidor acima; aqui, o que ele realmente consegue servir — a UI
+          // nunca deve oferecer um transporte que o backend não tem configurado.
+          availableMediaProviders,
           maxVideoBitrate: Number(process.env.MAX_VIDEO_BITRATE ?? 15_000_000),
           minVideoBitrate: Number(process.env.MIN_VIDEO_BITRATE ?? 2_500_000),
           startVideoBitrate: Number(
@@ -140,6 +175,28 @@ const server = Bun.serve<Client>({
         },
         { headers: { 'cache-control': 'no-store' } },
       ),
+    '/rooms/:roomId/moderators': (
+      request: Bun.BunRequest<'/rooms/:roomId/moderators'>,
+    ) =>
+      request.method === 'GET'
+        ? roomAdmin.listModerators(request, request.params.roomId)
+        : new Response('Method not allowed\n', { status: 405 }),
+    '/rooms/:roomId/moderators/:id/revoke': (
+      request: Bun.BunRequest<'/rooms/:roomId/moderators/:id/revoke'>,
+    ) =>
+      request.method === 'POST'
+        ? roomAdmin.revokeModerator(
+            request,
+            request.params.roomId,
+            request.params.id,
+          )
+        : new Response('Method not allowed\n', { status: 405 }),
+    '/rooms/:roomId/recover': (
+      request: Bun.BunRequest<'/rooms/:roomId/recover'>,
+    ) =>
+      request.method === 'POST'
+        ? roomAdmin.recover(request, request.params.roomId)
+        : new Response('Method not allowed\n', { status: 405 }),
     ...(realtimeProxy
       ? {
           '/realtime/session': (request: Request) =>
@@ -184,10 +241,18 @@ const server = Bun.serve<Client>({
 });
 
 const heartbeat = setInterval(() => hub.heartbeat(), 15_000);
+// Salas não somem mais quando esvaziam, então precisam de um teto: sem a varredura
+// toda sala descartável já criada ficaria para sempre. `last_active_at` sobe em todo
+// join e toda ação de host/moderador, então só o abandono real expira.
+const retentionSweep = setInterval(
+  () => void hub.pruneStaleRooms(retentionDays),
+  60 * 60 * 1000,
+);
 console.log(`ReShare listening on ${server.url}`);
 
 function shutdown() {
   clearInterval(heartbeat);
+  clearInterval(retentionSweep);
   hub.close();
   // Give the 1012 close frames a moment to flush before forcing the socket shut.
   setTimeout(() => void server.stop(true), 300);

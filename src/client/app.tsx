@@ -14,6 +14,7 @@ import { configureMedia } from './media/config';
 import { Room } from './room';
 import { RoomPasswordGate } from './components/roomModals';
 import { EyeIcon } from './components/icons';
+import type { HostSecrets } from './media/types';
 import {
   findStoredInvite,
   findRoomAccess,
@@ -24,6 +25,7 @@ import {
   removeFavoriteRoom,
   roomPasswordProtected,
   saveFavoriteRoom,
+  saveHostCredentials,
   type RoomInvite,
   validRoomAccessToken,
 } from './roomStorage';
@@ -32,6 +34,7 @@ import { applyTheme, loadTheme, type Theme } from './theme';
 
 const publicConfigSchema = z.object({
   mediaProvider: z.enum(['webrtc', 'cloudflare']).optional(),
+  availableMediaProviders: z.array(z.enum(['webrtc', 'cloudflare'])).optional(),
   maxVideoBitrate: z.number(),
   minVideoBitrate: z.number().optional(),
   startVideoBitrate: z.number().optional(),
@@ -100,7 +103,81 @@ function inviteFromLocation(roomId: string) {
     : incoming;
 }
 
-type OpenRoom = (invite: RoomInvite, password?: string) => void;
+type OpenRoom = (
+  invite: RoomInvite,
+  password?: string,
+  hostSecrets?: HostSecrets,
+) => void;
+
+const recoverResponseSchema = z
+  .object({ hostToken: z.string(), recoveryCode: z.string() })
+  .strict();
+
+// Recuperação de dono: precisa só do link de convite e do código guardado. Não é
+// prova de que quem recupera criou a sala, só de que tem (ou recebeu) o código — o
+// mesmo grau de garantia que o convite e a senha já oferecem neste app.
+function RecoverHostCard({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (event: React.SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const link = form.get('recover-room');
+    const code = form.get('recovery-code');
+    const invite = typeof link === 'string' ? parseInvite(link.trim()) : null;
+    if (!invite || typeof code !== 'string' || !code.trim()) {
+      setError('Informe o link da sala e o código de recuperação.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const response = await fetch(
+        `/rooms/${encodeURIComponent(invite.roomId)}/recover`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ recoveryCode: code.trim() }),
+        },
+      );
+      if (!response.ok) throw new Error(String(response.status));
+      const secrets = recoverResponseSchema.parse(await response.json());
+      saveHostCredentials({ roomId: invite.roomId, ...secrets });
+      onOpenRoom(invite, undefined, secrets);
+    } catch {
+      // A resposta é a mesma para sala inexistente e código errado, de propósito.
+      setError(
+        'Não foi possível recuperar o controle. Confira o link e o código.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="lobby-card" onSubmit={event => void submit(event)}>
+      <h2>Recuperar controle da sala</h2>
+      <label htmlFor="recover-room">Link da sala</label>
+      <input id="recover-room" name="recover-room" type="url" required />
+      <label htmlFor="recovery-code">Código de recuperação</label>
+      <input
+        id="recovery-code"
+        name="recovery-code"
+        autoComplete="off"
+        required
+      />
+      <button type="submit" className="btn btn-outline" disabled={busy}>
+        {busy ? 'Recuperando…' : 'Recuperar controle'}
+      </button>
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+    </form>
+  );
+}
 
 function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
   const [theme, setTheme] = useState(loadTheme);
@@ -148,7 +225,14 @@ function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
       const created = await createRoom(parsedName.data, parsedPassword.data);
       const invite = { roomId: created.roomId, credential: created.credential };
       saveFavoriteRoom({ ...invite, roomName: created.roomName });
-      onOpenRoom(invite, parsedPassword.data);
+      // O hostToken é reapresentado em silêncio a cada join desta sala; o código de
+      // recuperação é mostrado uma vez, no diálogo que a sala abre ao carregar.
+      const hostSecrets = {
+        hostToken: created.hostToken,
+        recoveryCode: created.recoveryCode,
+      };
+      saveHostCredentials({ roomId: created.roomId, ...hostSecrets });
+      onOpenRoom(invite, parsedPassword.data, hostSecrets);
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -234,6 +318,7 @@ function Lobby({ onOpenRoom }: { onOpenRoom: OpenRoom }) {
           Entrar
         </button>
       </form>
+      <RecoverHostCard onOpenRoom={onOpenRoom} />
       {favorites.length > 0 && (
         <section
           className="favorite-rooms"
@@ -305,7 +390,12 @@ function App() {
     const roomId = roomIdFromPath();
     if (roomId === null) return null;
     const invite = inviteFromLocation(roomId);
-    return { roomId, invite, password: undefined as string | undefined };
+    return {
+      roomId,
+      invite,
+      password: undefined as string | undefined,
+      hostSecrets: undefined as HostSecrets | undefined,
+    };
   });
 
   useEffect(() => {
@@ -317,15 +407,16 @@ function App() {
           roomId,
           invite: inviteFromLocation(roomId),
           password: undefined,
+          hostSecrets: undefined,
         });
     };
     window.addEventListener('popstate', navigate);
     return () => window.removeEventListener('popstate', navigate);
   }, []);
 
-  const openRoom: OpenRoom = (invite, password) => {
+  const openRoom: OpenRoom = (invite, password, hostSecrets) => {
     history.pushState(null, '', inviteUrl(invite));
-    setRoute({ roomId: invite.roomId, invite, password });
+    setRoute({ roomId: invite.roomId, invite, password, hostSecrets });
   };
 
   let page;
@@ -351,6 +442,7 @@ function App() {
         credential={route.invite.credential}
         password={route.password}
         accessToken={validRoomAccessToken(route.invite)}
+        initialHostSecrets={route.hostSecrets}
       />
     );
   return (
@@ -387,6 +479,7 @@ async function bootstrap() {
     configureRtc(config);
     configureMedia({
       mediaProvider: config.mediaProvider ?? 'webrtc',
+      availableMediaProviders: config.availableMediaProviders,
       maxVideoBitrate: config.maxVideoBitrate,
     });
   } catch {

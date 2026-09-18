@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { roomIdSchema, roomNameSchema } from '../src/lib/signaling/messages';
 
@@ -36,6 +36,22 @@ function same(left: string, right: string) {
   const a = Buffer.from(left);
   const b = Buffer.from(right);
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+// Segredos portadores por sala (hostToken, recoveryCode, memberId). 192 bits de
+// entropia: nunca derivam de entrada do usuário, então não há questão de força de
+// senha. O servidor guarda apenas o HMAC — o mesmo padrão de capability token que
+// as credenciais de convite acima já usam.
+export function generateRoomSecret() {
+  return randomBytes(24).toString('base64url');
+}
+
+export function hashRoomSecret(secret: string, value: string) {
+  return mac(secret, 'room-secret:v1', value);
+}
+
+export function verifyRoomSecret(secret: string, value: string, hash: string) {
+  return same(hash, mac(secret, 'room-secret:v1', value));
 }
 
 export function issueRoomCredential(

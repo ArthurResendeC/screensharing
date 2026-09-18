@@ -24,10 +24,12 @@ crie um app. Você recebe **App ID** e **App Secret**. Conta gratuita basta.
 
 | Variável | Obrigatória | Descrição |
 |---|---|---|
-| `MEDIA_PROVIDER` | não | `webrtc` (padrão) ou `cloudflare` — a chave de rollout/rollback |
+| `MEDIA_PROVIDER` | não | `webrtc` (padrão) ou `cloudflare` — agora só o **padrão de salas novas**; cada sala pode sobrescrever |
 | `CLOUDFLARE_REALTIME_APP_ID` | se `cloudflare` | da dashboard; vai no path das chamadas ao SFU |
 | `CLOUDFLARE_REALTIME_APP_SECRET` | se `cloudflare` | Bearer das chamadas ao SFU — **só no servidor**, nunca em `/config.json` |
-| `ROOM_TOKEN_SECRET` | em produção | inalterada — assina convites e o ticket de sessão, ≥ 32 caracteres |
+| `ROOM_TOKEN_SECRET` | em produção | assina convites e o ticket de sessão **e** gera os HMACs guardados no SQLite, ≥ 32 caracteres |
+| `SQLITE_PATH` | em produção | banco de dono/moderadores/transporte por sala; precisa ficar num volume montado (`/data/rooms.sqlite`) |
+| `ROOM_RETENTION_DAYS` | não | dias sem atividade antes de uma sala ser apagada pela varredura horária (padrão `30`) |
 | `MAX_ROOM_PARTICIPANTS` | não | limite de tamanho de sala verificado ao entrar (vale nos dois modos); ausente = sem limite |
 | `TURN_URL` / `TURN_USERNAME` / `TURN_CREDENTIAL` | não | TURN extra opcional; a Cloudflare já expõe IP público + STUN |
 
@@ -38,6 +40,26 @@ railway variables set \
   --service ReShare
 ```
 
+O proxy `/realtime/*` agora é montado **sempre que houver credenciais Cloudflare**, e
+não só quando `MEDIA_PROVIDER=cloudflare`: com override por sala, um servidor cujo
+padrão é `webrtc` ainda precisa atender uma sala cujo dono escolheu o SFU.
+
+## Persistência (SQLite num volume)
+
+Dono da sala, moderadores permanentes e o transporte escolhido ficam num SQLite
+(`bun:sqlite`, sem dependência nova). Em produção **é obrigatório** um volume montado:
+sem ele o arquivo é recriado vazio a cada deploy e todos os `hostToken`, códigos de
+recuperação e grants de moderador se perdem em silêncio — exatamente o que
+"permanente" deveria evitar. A IaC do Railway já declara o volume `rooms-data` em
+`/data` e define `SQLITE_PATH=/data/rooms.sqlite`.
+
+Só os HMACs são gravados: um arquivo SQLite roubado não entrega credencial utilizável.
+Como o HMAC usa `ROOM_TOKEN_SECRET`, trocar esse segredo invalida convites, tokens de
+dono e grants de moderador de uma vez.
+
+Um arquivo SQLite tem um único escritor, então a contagem de réplicas continua em 1 —
+agora por dois motivos, não só pela presença em memória.
+
 ## Estratégia de migração
 
 1. Publique o código com `MEDIA_PROVIDER` ausente/`webrtc` — produção não muda.
@@ -46,7 +68,9 @@ railway variables set \
 3. Numa preview do Railway, `MEDIA_PROVIDER=cloudflare` e rode
    `bun run test:e2e:cloudflare`; teste em duas abas.
 4. Mude produção para `cloudflare`.
-5. **Rollback:** `MEDIA_PROVIDER=webrtc` + reiniciar. Sem deploy de código.
+5. **Rollback:** `MEDIA_PROVIDER=webrtc` + reiniciar. Sem deploy de código. Atenção:
+   isso só muda o padrão de salas novas — uma sala cujo dono escolheu `cloudflare`
+   continua nesse transporte até que ele ou um moderador troque de volta.
 6. Depois de estabilizar, um PR posterior pode remover `src/lib/webrtc/**` e o relay
    offer/answer/ice do `server/signaling.ts` (mantendo `create-room` e a presença).
 

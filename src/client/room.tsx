@@ -1,7 +1,9 @@
 import { useState, type CSSProperties } from 'react';
 import {
   DebugModal,
+  HostSecretsModal,
   JoinErrorModal,
+  KickedModal,
   NameGate,
   RoomPasswordGate,
 } from './components/roomModals';
@@ -9,6 +11,7 @@ import { RoomDebug } from './components/roomDebug';
 import { RoomSidebar } from './components/roomSidebar';
 import { RoomStage } from './components/roomStage';
 import { useScreenShareController } from './hooks/useScreenShareController';
+import type { HostSecrets } from './media/types';
 import {
   isFavoriteRoom,
   removeFavoriteRoom,
@@ -20,11 +23,15 @@ export function Room({
   credential,
   password,
   accessToken,
+  initialHostSecrets,
 }: {
   roomId: string;
   credential: string;
   password?: string;
   accessToken?: string;
+  // Criação e recuperação acontecem no lobby, fora da conexão da sala, então os
+  // segredos entregues lá chegam por aqui para o mesmo diálogo de uso único.
+  initialHostSecrets?: HostSecrets;
 }) {
   const { controller, state } = useScreenShareController(
     roomId,
@@ -33,6 +40,14 @@ export function Room({
     accessToken,
   );
   const [debugOpen, setDebugOpen] = useState(false);
+  const [lobbySecrets, setLobbySecrets] = useState<HostSecrets | null>(
+    initialHostSecrets ?? null,
+  );
+  // O nome gravado é lido na primeira renderização, então o portão só abre para quem
+  // ainda não escolheu um; daí em diante quem manda é o envio do formulário.
+  const [aliasKnown] = useState(() => Boolean(state.alias));
+  const [aliasSubmitted, setAliasSubmitted] = useState(false);
+  const nameGateOpen = Boolean(state.selfId) && !aliasKnown && !aliasSubmitted;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [favorite, setFavorite] = useState(() => isFavoriteRoom(roomId));
   const toggleFavorite = () => {
@@ -78,7 +93,22 @@ export function Room({
           onSubmit={value => controller.retryRoomPassword(value)}
         />
       )}
-      {state.selfId && <NameGate state={state} controller={controller} />}
+      {state.selfId && (
+        <NameGate
+          open={nameGateOpen}
+          state={state}
+          controller={controller}
+          onSubmit={() => setAliasSubmitted(true)}
+        />
+      )}
+      <HostSecretsModal
+        secrets={nameGateOpen ? null : (state.hostSecrets ?? lobbySecrets)}
+        onDismiss={() => {
+          setLobbySecrets(null);
+          controller.dismissHostSecrets();
+        }}
+      />
+      <KickedModal by={state.kickedBy} />
       <JoinErrorModal
         message={state.joinError}
         onRetry={() => controller.reconnect()}

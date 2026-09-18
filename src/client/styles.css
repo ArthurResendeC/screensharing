@@ -462,11 +462,15 @@ ul.members {
 }
 .member {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
   padding: 7px 8px;
   border-radius: 8px;
   cursor: default;
+}
+.member .member-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .member.is-live {
   cursor: pointer;
@@ -547,6 +551,138 @@ ul.members {
 }
 .member .watch-btn:disabled {
   cursor: default;
+}
+
+.member .name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.member .name-row .name {
+  min-width: 0;
+}
+.role-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.role-badge.is-moderator {
+  color: var(--ink);
+  background: var(--hover);
+  border: 1px solid var(--border);
+}
+.member .member-admin-btn {
+  margin-left: auto;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: var(--hover);
+  opacity: 0;
+  cursor: pointer;
+}
+.member:hover .member-admin-btn,
+.member .member-admin-btn.is-active {
+  opacity: 1;
+}
+.member .member-admin-btn.is-active {
+  color: var(--accent);
+}
+/* Com o botão de moderação presente ele já ocupa o `margin-left: auto`, então o
+   botão de assistir não deve empurrar de novo. */
+.member .member-admin-btn + .watch-btn {
+  margin-left: 0;
+}
+.member-admin-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 6px 0 2px 42px;
+}
+.member-admin-menu button {
+  text-align: left;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--card-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.member-admin-menu button:hover {
+  background: var(--hover);
+}
+.member-admin-menu button.is-danger {
+  color: var(--danger);
+}
+
+.claim-host {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 10px 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card-2);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.moderators-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.moderator-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.moderator-row .info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.moderator-row .name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.moderator-row .status {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.moderator-row .theme-btn {
+  margin-left: auto;
+}
+
+.modal-card .recovery-code {
+  display: block;
+  width: 100%;
+  margin: 4px 0 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card-2);
+  color: var(--ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  user-select: all;
 }
 
 .debug-toggle-btn {

@@ -5,9 +5,11 @@ import {
   type VideoCodecPreference,
   VIDEO_CODEC_PREFERENCES,
 } from '../../lib/webrtc/codecs';
-import type { MediaProvider } from '../media/types';
+import { availableMediaProviders } from '../media/config';
+import type { MediaProvider, MediaProviderKind } from '../media/types';
 import { ACCENTS, type ScreenShareState } from '../screenShare';
 import { inviteUrl, listFavoriteRooms } from '../roomStorage';
+import { ModeratorsPanel } from './roomModerators';
 import {
   avatarColor,
   initialsOf,
@@ -58,6 +60,11 @@ const CAPTURE_ITEMS: Array<{
   { value: 'sharp', label: 'Nítida — 1440p · 60 FPS' },
 ];
 
+const PROVIDER_LABELS: Record<MediaProviderKind, string> = {
+  webrtc: 'Direto entre navegadores (mesh)',
+  cloudflare: 'Servidor de mídia Cloudflare (SFU)',
+};
+
 export function RoomSidebar({
   roomId,
   state,
@@ -76,6 +83,20 @@ export function RoomSidebar({
     event.preventDefault();
     const value = new FormData(event.currentTarget).get('alias-rename');
     controller.setAlias(typeof value === 'string' ? value : '');
+  };
+  const canControlRoom = state.role === 'host' || state.role === 'moderator';
+  const providerItems = availableMediaProviders().map(value => ({
+    value,
+    label: PROVIDER_LABELS[value],
+  }));
+  // Trocar o transporte derruba e refaz a conexão de todo mundo na sala, então a
+  // interrupção é anunciada antes e não descoberta depois.
+  const changeProvider = (provider: MediaProviderKind) => {
+    if (provider === state.mediaProvider) return;
+    const ok = window.confirm(
+      `Trocar para "${PROVIDER_LABELS[provider]}" interrompe todas as transmissões da sala por alguns segundos enquanto todos reconectam. Continuar?`,
+    );
+    if (ok) controller.setRoomMediaProvider(provider);
   };
 
   return (
@@ -123,6 +144,22 @@ export function RoomSidebar({
             {roomId}
           </span>
         </div>
+        {state.hostClaimable &&
+          !state.members.some(member => member.role === 'host') && (
+            <div className="claim-host" data-claim-host>
+              <span>
+                Esta sala não tem dono. Assumir o controle permite definir
+                moderadores e o transporte de mídia.
+              </span>
+              <button
+                type="button"
+                className="theme-btn"
+                onClick={() => controller.claimHost()}
+              >
+                Assumir o controle
+              </button>
+            </div>
+          )}
         <div className="sidebar-section">
           <div className="section-title">
             <span>Participantes</span>
@@ -137,6 +174,18 @@ export function RoomSidebar({
               selectedIds={state.selectedIds}
               connected={connected}
               onWatch={peerId => controller.watch(peerId)}
+              moderation={
+                canControlRoom
+                  ? {
+                      role: state.role,
+                      onKick: peerId => controller.kick(peerId),
+                      onGrantModerator: (peerId, permanent) =>
+                        controller.grantModerator(peerId, permanent),
+                      onRevokeModerator: peerId =>
+                        controller.revokeModerator(peerId),
+                    }
+                  : undefined
+              }
             />
           </ul>
         </div>
@@ -273,6 +322,39 @@ export function RoomSidebar({
             <span className="settings-hint">
               A alteração vale no próximo compartilhamento.
             </span>
+            {canControlRoom && (
+              <>
+                <span className="label">Transporte de mídia da sala</span>
+                <Select
+                  items={providerItems}
+                  value={state.mediaProvider}
+                  onValueChange={value => value && changeProvider(value)}
+                >
+                  <SelectTrigger aria-label="Transporte de mídia desta sala">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {providerItems.map(item => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <span className="settings-hint">
+                  Vale para todos nesta sala e interrompe as transmissões por
+                  alguns segundos.
+                </span>
+              </>
+            )}
+            {state.role === 'host' && (
+              <>
+                <span className="label">Moderadores permanentes</span>
+                <ModeratorsPanel roomId={roomId} />
+              </>
+            )}
           </div>
         )}
         <div className="sidebar-footer">

@@ -25,15 +25,21 @@ import {
   storedCodecPreference,
   storedDegradation,
 } from './media/preferences';
+import type { MediaProviderOptions } from './media/factory';
 import type {
   CaptureQuality,
   MediaProvider,
+  MediaProviderKind,
   ScreenShareState,
   Selection,
 } from './media/types';
 import { ACCENTS } from './media/types';
 import { displayName, participantName } from './participantPresentation';
-import { inviteUrl, rememberRoomAccess } from './roomStorage';
+import {
+  inviteUrl,
+  rememberRoomAccess,
+  saveHostCredentials,
+} from './roomStorage';
 import { playSound, unlockSounds } from './sounds';
 import { loadTheme, type Theme } from './theme';
 
@@ -58,7 +64,13 @@ type Listener = () => void;
 export class ScreenShareController implements MediaProvider {
   private session: Session | null = null;
   private readonly listeners = new Set<Listener>();
-  private readonly clientId = crypto.randomUUID?.() ?? '';
+  private readonly roomId: string;
+  private readonly credential: string;
+  private readonly clientId: string;
+  private readonly memberId?: string;
+  private hostToken?: string;
+  private roomPassword?: string;
+  private roomAccessToken?: string;
   private localStream: MediaStream | null = null;
   private readonly watchTargets = new Map<string, string>();
   private resumeWatch = false;
@@ -72,6 +84,10 @@ export class ScreenShareController implements MediaProvider {
   private activeCodecPreference: VideoCodecPreference | null = null;
   private state: ScreenShareState = {
     mediaProvider: 'webrtc',
+    role: 'guest',
+    hostClaimable: false,
+    hostSecrets: null,
+    kickedBy: '',
     socketState: 'connecting',
     selfId: '',
     members: [],
@@ -99,12 +115,20 @@ export class ScreenShareController implements MediaProvider {
     inviteCopied: false,
   };
 
-  constructor(
-    private readonly roomId: string,
-    private readonly credential: string,
-    private roomPassword?: string,
-    private roomAccessToken?: string,
-  ) {}
+  constructor(options: MediaProviderOptions) {
+    this.roomId = options.roomId;
+    this.credential = options.credential;
+    this.roomPassword = options.password;
+    this.roomAccessToken = options.accessToken;
+    this.clientId = options.clientId;
+    this.memberId = options.memberId;
+    this.hostToken = options.hostToken;
+    // Captura herdada de um provedor anterior numa troca de transporte: fica viva e
+    // é republicada assim que o join termina, sem novo getDisplayMedia().
+    this.localStream = options.adoptedStream ?? null;
+    if (this.localStream)
+      this.state = { ...this.state, localStream: this.localStream };
+  }
 
   getSnapshot = () => this.state;
 
@@ -189,6 +213,56 @@ export class ScreenShareController implements MediaProvider {
     this.startSession();
   }
 
+  // O servidor reautoriza cada uma destas pelo papel resolvido no join; aqui só
+  // enviamos. Uma falha de envio vira erro visível em vez de silêncio.
+  private control(
+    message: Parameters<NonNullable<Session['channel']>['send']>[0],
+  ) {
+    const session = this.session;
+    if (!session?.joined || session.disposed) return;
+    try {
+      session.channel?.send(message);
+    } catch (error) {
+      this.setError(
+        error instanceof Error ? error.message : 'Ação indisponível.',
+      );
+    }
+  }
+
+  setRoomMediaProvider(provider: MediaProviderKind) {
+    if (provider === this.state.mediaProvider) return;
+    this.control({ type: 'set-room-media-provider', provider });
+  }
+
+  grantModerator(peerId: string, permanent: boolean) {
+    this.control({ type: 'grant-moderator', targetPeerId: peerId, permanent });
+  }
+
+  revokeModerator(peerId: string) {
+    this.control({ type: 'revoke-moderator', targetPeerId: peerId });
+  }
+
+  kick(peerId: string) {
+    this.control({ type: 'kick-peer', targetPeerId: peerId });
+  }
+
+  claimHost() {
+    this.control({ type: 'claim-host' });
+  }
+
+  dismissHostSecrets() {
+    this.update({ hostSecrets: null });
+  }
+
+  detach() {
+    const stream = this.localStream;
+    // Ao contrário de dispose(), não para as tracks: o provedor seguinte adota a
+    // mesma captura, então quem transmite não precisa reescolher a tela.
+    this.localStream = null;
+    this.dispose();
+    return stream;
+  }
+
   dismissJoinError() {
     this.update({ joinError: '' });
   }
@@ -211,6 +285,8 @@ export class ScreenShareController implements MediaProvider {
       credential: this.credential,
       password,
       ...(this.clientId ? { clientId: this.clientId } : {}),
+      ...(this.memberId ? { memberId: this.memberId } : {}),
+      ...(this.hostToken ? { hostToken: this.hostToken } : {}),
     });
   }
 
@@ -572,11 +648,15 @@ export class ScreenShareController implements MediaProvider {
     this.session = session;
     try {
       session.channel = connectSignaling(
-        this.roomId,
-        this.credential,
-        this.roomPassword,
-        this.roomAccessToken,
-        this.clientId,
+        {
+          roomId: this.roomId,
+          credential: this.credential,
+          password: this.roomPassword,
+          accessToken: this.roomAccessToken,
+          clientId: this.clientId,
+          memberId: this.memberId,
+          hostToken: this.hostToken,
+        },
         message => {
           queue = queue
             .then(() => this.receive(session, message))
@@ -609,6 +689,11 @@ export class ScreenShareController implements MediaProvider {
       members: [],
       remoteStreams: [],
     });
+    if (socketState === 'kicked') {
+      this.accessTerminal = true;
+      if (!this.state.kickedBy) this.update({ kickedBy: 'host' });
+      return;
+    }
     if (this.disposed || this.accessTerminal) return;
     this.setError(
       socketState === 'restarting'
@@ -642,7 +727,11 @@ export class ScreenShareController implements MediaProvider {
     }
     session.membersSeeded = true;
     session.members = next;
-    this.update({ members: next });
+    // O papel pode mudar no meio da sessão (promoção ou rebaixamento pelo dono). O
+    // servidor não manda mensagem própria para isso: o papel novo vem no room-state
+    // seguinte, então é daqui que o próprio papel é relido.
+    const self = next.find(peer => peer.peerId === this.state.selfId);
+    this.update({ members: next, ...(self ? { role: self.role } : {}) });
   }
 
   private async receive(session: Session, message: ServerMessage) {
@@ -667,6 +756,12 @@ export class ScreenShareController implements MediaProvider {
           passwordProtected: message.passwordProtected,
           accessToken: message.accessToken ?? undefined,
           accessTokenExpiresAt: message.accessTokenExpiresAt ?? undefined,
+          role: message.role,
+          hostClaimable: message.hostClaimable,
+          // Autoritativo a partir daqui: /config.json só dá o padrão do servidor.
+          // O hook compara com o transporte em execução e troca o provedor se
+          // divergirem.
+          mediaProvider: message.mediaProvider,
           accessError: '',
           error: '',
         });
@@ -680,6 +775,34 @@ export class ScreenShareController implements MediaProvider {
         this.update({ accessError: message.reason });
         break;
       case 'room-created':
+        break;
+      case 'host-claimed':
+        // Mesma forma e mesmo diálogo de "guarde este código" do room-created.
+        this.hostToken = message.hostToken;
+        saveHostCredentials({
+          roomId: this.roomId,
+          hostToken: message.hostToken,
+          recoveryCode: message.recoveryCode,
+        });
+        this.update({
+          role: 'host',
+          hostClaimable: false,
+          hostSecrets: {
+            hostToken: message.hostToken,
+            recoveryCode: message.recoveryCode,
+          },
+        });
+        break;
+      case 'room-settings-changed':
+        // O hook observa esta mudança, descarta este provedor e recria com o
+        // transporte novo: mesh e SFU não são intercambiáveis a quente.
+        this.update({ mediaProvider: message.mediaProvider });
+        break;
+      case 'kicked':
+        // Encerra sem backoff: o socket vai fechar com 4002 logo em seguida e
+        // reconectar sozinho seria só entrar de novo na sala de onde saímos.
+        this.accessTerminal = true;
+        this.update({ kickedBy: message.by });
         break;
       case 'room-state':
         this.updateMembers(session, message.peers);

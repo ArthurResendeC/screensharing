@@ -11,6 +11,10 @@ const ROOM_ACCESS_TOKEN_MAX_LENGTH = 1024;
 // serializadas.
 const MAX_ROOM_MESSAGE_PARTICIPANTS = 250;
 export const MAX_WATCHED_STREAMS = 2;
+// Código de fechamento próprio para expulsão, distinto do 4001 usado quando uma aba
+// reconecta e despeja a própria conexão anterior: o cliente precisa distinguir "você
+// foi removido" da rotina normal de reconexão com backoff.
+export const KICKED_CLOSE_CODE = 4002;
 export const roomNameSchema = z
   .string()
   .max(2000)
@@ -30,6 +34,16 @@ export const roomAccessTokenSchema = z
   .string()
   .min(1)
   .max(ROOM_ACCESS_TOKEN_MAX_LENGTH);
+// Transporte de mídia de uma sala. O servidor tem um padrão (MEDIA_PROVIDER) e cada
+// sala pode sobrescrevê-lo; o valor que o `joined` devolve é o que vale.
+const mediaProviderSchema = z.enum(['webrtc', 'cloudflare']);
+export type MediaProviderKind = z.infer<typeof mediaProviderSchema>;
+// Papel derivado no servidor uma vez, no join. Só o papel trafega na sala: nem o
+// hostToken nem o memberId aparecem em qualquer broadcast.
+const roomRoleSchema = z.enum(['host', 'moderator', 'guest']);
+export type RoomRole = z.infer<typeof roomRoleSchema>;
+// hostToken / recoveryCode: 24 bytes base64url emitidos pelo servidor.
+export const roomSecretSchema = z.string().regex(/^[A-Za-z0-9_-]{16,128}$/);
 const candidateSchema = z
   .object({
     candidate: z.string().max(4096),
@@ -88,6 +102,7 @@ const participant = z
     sharing: z.boolean(),
     alias: z.string().max(ALIAS_MAX_LENGTH).nullable(),
     rt: rtPublicationSchema.nullable(),
+    role: roomRoleSchema,
   })
   .strict();
 export type Participant = z.infer<typeof participant>;
@@ -108,6 +123,8 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
       password: roomPasswordSchema.optional(),
       accessToken: roomAccessTokenSchema.optional(),
       clientId: id.optional(),
+      memberId: id.optional(),
+      hostToken: roomSecretSchema.optional(),
     })
     .strict(),
   offer,
@@ -125,6 +142,22 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
       sessionId: id,
     })
     .strict(),
+  z
+    .object({
+      type: z.literal('set-room-media-provider'),
+      provider: mediaProviderSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('grant-moderator'),
+      targetPeerId: id,
+      permanent: z.boolean(),
+    })
+    .strict(),
+  z.object({ type: z.literal('revoke-moderator'), targetPeerId: id }).strict(),
+  z.object({ type: z.literal('kick-peer'), targetPeerId: id }).strict(),
+  z.object({ type: z.literal('claim-host') }).strict(),
   z.object({ type: z.literal('ping') }).strict(),
 ]);
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
@@ -135,6 +168,8 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     roomName: roomNameSchema,
     credential: roomCredentialSchema,
     passwordProtected: z.boolean(),
+    hostToken: roomSecretSchema,
+    recoveryCode: roomSecretSchema,
   }),
   z.object({
     type: z.literal('joined'),
@@ -144,6 +179,10 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     accessToken: roomAccessTokenSchema.nullable(),
     accessTokenExpiresAt: z.number().int().positive().nullable(),
     peerId: id,
+    role: roomRoleSchema,
+    memberId: id,
+    mediaProvider: mediaProviderSchema,
+    hostClaimable: z.boolean(),
     peers: z.array(participant).max(MAX_ROOM_MESSAGE_PARTICIPANTS),
   }),
   z
@@ -172,6 +211,22 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     peerId: id,
     sessionId: id,
   }),
+  z
+    .object({
+      type: z.literal('room-settings-changed'),
+      mediaProvider: mediaProviderSchema,
+    })
+    .strict(),
+  z
+    .object({ type: z.literal('kicked'), by: z.enum(['host', 'moderator']) })
+    .strict(),
+  z
+    .object({
+      type: z.literal('host-claimed'),
+      hostToken: roomSecretSchema,
+      recoveryCode: roomSecretSchema,
+    })
+    .strict(),
   z.object({ type: z.literal('error'), message: z.string().max(300) }),
   z.object({ type: z.literal('pong') }).strict(),
   offer.omit({ targetPeerId: true }).extend({ peerId: id }),

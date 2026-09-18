@@ -1,12 +1,17 @@
-import type { Participant } from '../../lib/signaling/messages';
+import type {
+  MediaProviderKind,
+  Participant,
+  RoomRole,
+} from '../../lib/signaling/messages';
 import type { VideoCodecPreference } from '../../lib/webrtc/codecs';
 import type { Peers } from '../../lib/webrtc/peers';
 import type { VideoDegradation } from '../../lib/webrtc/rtcConfiguration';
 import type { Theme } from '../theme';
 
-// Qual implementação de mídia está ativa. Escolhida em /config.json e lida por
-// createMediaProvider(); os componentes só precisam disso para ajustar duas frases.
-export type MediaProviderKind = 'webrtc' | 'cloudflare';
+// Qual implementação de mídia está ativa. O padrão vem de /config.json, mas o valor
+// que vale é o que o `joined` da sala devolve — o transporte é por sala, e o dono ou
+// um moderador pode trocá-lo em tempo real.
+export type { MediaProviderKind };
 
 export type CaptureQuality = 'fluid' | 'balanced' | 'sharp';
 
@@ -21,8 +26,21 @@ type EndedReason = 'me' | 'remote' | null;
 export type Selection = { peerId: string; sessionId: string };
 export type RemoteStream = Selection & { stream: MediaStream };
 
+export type HostSecrets = { hostToken: string; recoveryCode: string };
+
 export type ScreenShareState = {
+  // Transporte ativo desta sala, autoritativo depois do join.
   mediaProvider: MediaProviderKind;
+  // Papel derivado no servidor. `moderator` temporário some ao reconectar; o
+  // permanente volta porque o memberId salvo é reenviado no join.
+  role: RoomRole;
+  // A sala ainda não tem linha no banco (criada antes deste recurso): qualquer um
+  // pode reivindicar o controle uma única vez.
+  hostClaimable: boolean;
+  // Segredos entregues uma única vez (criação ou reivindicação), para o diálogo
+  // "guarde este código". Nulo depois de dispensado.
+  hostSecrets: HostSecrets | null;
+  kickedBy: '' | 'host' | 'moderator';
   socketState: string;
   selfId: string;
   members: Participant[];
@@ -76,6 +94,19 @@ export interface MediaProvider {
   setCaptureQuality(value: CaptureQuality): Promise<void>;
   setCodecPreference(value: VideoCodecPreference): void;
   reconnect(): void;
+  // Ações privilegiadas. O servidor reautoriza todas pelo papel resolvido no join;
+  // estes métodos não gatilham nada sozinhos quando o papel não permite.
+  setRoomMediaProvider(provider: MediaProviderKind): void;
+  grantModerator(peerId: string, permanent: boolean): void;
+  revokeModerator(peerId: string): void;
+  kick(peerId: string): void;
+  claimHost(): void;
+  dismissHostSecrets(): void;
+  // Encerra a sessão mantendo a captura de tela viva, para o provedor seguinte
+  // adotá-la quando a sala troca de transporte. Sem isto, trocar de transporte
+  // exigiria que quem transmite escolhesse a tela de novo — e getDisplayMedia()
+  // precisa de um gesto do usuário, então não dá para refazer sozinho.
+  detach(): MediaStream | null;
   retryRoomPassword(password: string): void;
   dismissJoinError(): void;
   dismissEnded(): void;

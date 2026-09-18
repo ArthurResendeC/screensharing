@@ -1,8 +1,22 @@
 import {
+  KICKED_CLOSE_CODE,
   serverMessageSchema,
   type ClientMessage,
   type ServerMessage,
 } from './messages';
+
+// Tudo o que identifica esta aba nesta sala. memberId e hostToken vêm do
+// localStorage: são o que faz um moderador permanente e o dono voltarem ao papel
+// certo depois de um reconnect ou de um redeploy.
+export type SignalingIdentity = {
+  roomId: string;
+  credential: string;
+  password?: string;
+  accessToken?: string;
+  clientId: string;
+  memberId?: string;
+  hostToken?: string;
+};
 
 // App-level heartbeat: a backgrounded or half-open socket can stay "open" for minutes
 // after the server is gone. Ping regularly and treat a missing reply as a disconnect.
@@ -10,14 +24,12 @@ const PING_INTERVAL_MS = 12_000;
 const PONG_TIMEOUT_MS = 20_000;
 
 export function connectSignaling(
-  roomId: string,
-  credential: string,
-  password: string | undefined,
-  accessToken: string | undefined,
-  clientId: string,
+  identity: SignalingIdentity,
   onMessage: (message: ServerMessage) => void,
   onState: (state: string) => void,
 ) {
+  const { roomId, credential, password, accessToken, clientId, memberId } =
+    identity;
   const url = new URL('/signaling', location.href);
   url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const socket = new WebSocket(url);
@@ -60,6 +72,8 @@ export function connectSignaling(
       ...(password ? { password } : {}),
       ...(accessToken ? { accessToken } : {}),
       ...(clientId ? { clientId } : {}),
+      ...(memberId ? { memberId } : {}),
+      ...(identity.hostToken ? { hostToken: identity.hostToken } : {}),
     });
     startHeartbeat();
   };
@@ -79,9 +93,11 @@ export function connectSignaling(
   socket.onclose = event => {
     stopHeartbeat();
     onState(
-      event.code === 1012 || event.code === 1001
-        ? 'restarting'
-        : 'disconnected',
+      event.code === KICKED_CLOSE_CODE
+        ? 'kicked'
+        : event.code === 1012 || event.code === 1001
+          ? 'restarting'
+          : 'disconnected',
     );
   };
   return {

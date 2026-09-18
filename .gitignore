@@ -8,3 +8,6 @@ playwright-report/
 test-results/
 dist/
 .railway/*-plan.json
+
+# Banco SQLite local (dono/moderadores por sala). Em produção fica num volume.
+data/
