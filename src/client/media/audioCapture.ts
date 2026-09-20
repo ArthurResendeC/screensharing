@@ -3,12 +3,12 @@ import {
   type AudioProfile,
 } from '../../lib/webrtc/audio';
 
-// De onde sai o áudio da transmissão. Nenhum navegador separa áudio por aplicativo:
-// no Windows, capturar uma janela ou a tela devolve o loopback do dispositivo de
-// saída inteiro — é assim que a chamada do Discord entra junto com o jogo. Só a
-// captura de aba é isolada, e 'capture' tira a opção do mix do sistema do seletor.
-// 'input' existe para o caminho oposto: mandar um programa para um cabo virtual no
-// mixer do Windows e capturar só esse cabo.
+// De onde sai o áudio da transmissão. Compartilhar a tela inteira sempre devolve o
+// loopback do dispositivo de saída — é assim que a chamada do Discord entra junto
+// com o jogo. Aba e janela são isoladas: a aba pelo próprio Chrome, a janela por
+// 'windowAudio: window', que no Windows 10 2004+ vira um loopback só da árvore de
+// processos daquela janela. 'input' existe para o caso em que nem isso serve:
+// mandar um programa para um cabo virtual no mixer e capturar só esse cabo.
 export const AUDIO_SOURCES = [
   'capture',
   'capture-with-system',
@@ -24,8 +24,17 @@ const usesCaptureAudio = (source: AudioSource) =>
 // A lib do TypeScript ainda não descreve as dicas de seletor do Chromium.
 type DisplayMediaOptions = DisplayMediaStreamOptions & {
   systemAudio?: 'include' | 'exclude';
+  windowAudio?: 'system' | 'window' | 'exclude';
   selfBrowserSurface?: 'include' | 'exclude';
   surfaceSwitching?: 'include' | 'exclude';
+};
+
+// Sem essa dica a janela cai no padrão 'system' e traz o mix inteiro do sistema,
+// anulando o 'systemAudio: exclude' ao lado — eles governam superfícies diferentes.
+const windowAudioFor = (source: AudioSource) => {
+  if (source === 'capture') return 'window' as const;
+  if (source === 'capture-with-system') return 'system' as const;
+  return 'exclude' as const;
 };
 
 export function displayMediaConstraints(
@@ -40,6 +49,7 @@ export function displayMediaConstraints(
       noiseSuppression: false,
     },
     systemAudio: source === 'capture-with-system' ? 'include' : 'exclude',
+    windowAudio: windowAudioFor(source),
     // Sem isso a própria aba entra no loopback e o áudio volta em eco.
     selfBrowserSurface: 'exclude',
     surfaceSwitching: 'include',

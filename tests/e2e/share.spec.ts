@@ -823,13 +823,18 @@ test('the picker is asked to leave the system mix out unless the sharer asks for
   await enterRoom(page);
   await shareButton(page).click();
 
-  // The default: a window or screen capture cannot pick up whatever else is playing
-  // on the machine, because the picker never offers it.
+  // The default: a screen capture cannot pick up whatever else is playing on the
+  // machine because the picker never offers it, and a window capture is asked for
+  // that window's own audio instead of the system mix it would otherwise default to.
   expect(
     await page.evaluate(
       () => (window as unknown as TestWindow).testDisplayOptions,
     ),
-  ).toMatchObject({ systemAudio: 'exclude', selfBrowserSurface: 'exclude' });
+  ).toMatchObject({
+    systemAudio: 'exclude',
+    windowAudio: 'window',
+    selfBrowserSurface: 'exclude',
+  });
 
   await stopShareButton(page).click();
   await chooseAudioSource(page, /com o mix do sistema/);
@@ -838,7 +843,7 @@ test('the picker is asked to leave the system mix out unless the sharer asks for
     await page.evaluate(
       () => (window as unknown as TestWindow).testDisplayOptions,
     ),
-  ).toMatchObject({ systemAudio: 'include' });
+  ).toMatchObject({ systemAudio: 'include', windowAudio: 'system' });
 
   // And the choice is remembered, so nobody re-enables it by accident on the next visit.
   await page.reload();
@@ -848,7 +853,7 @@ test('the picker is asked to leave the system mix out unless the sharer asks for
     await page.evaluate(
       () => (window as unknown as TestWindow).testDisplayOptions,
     ),
-  ).toMatchObject({ systemAudio: 'include' });
+  ).toMatchObject({ systemAudio: 'include', windowAudio: 'system' });
 
   // Choosing no audio at all stops the picker from being asked for any.
   await stopShareButton(page).click();
@@ -858,6 +863,10 @@ test('the picker is asked to leave the system mix out unless the sharer asks for
     await page.evaluate(
       () => (window as unknown as TestWindow).testDisplayOptions,
     ),
-  ).toMatchObject({ audio: false, systemAudio: 'exclude' });
+  ).toMatchObject({
+    audio: false,
+    systemAudio: 'exclude',
+    windowAudio: 'exclude',
+  });
   await expect(page.locator('[data-capture-info]')).toContainText('Sem áudio');
 });

@@ -113,8 +113,8 @@ export function persistCodecPreference(value: VideoCodecPreference) {
   }
 }
 
-// 'capture' e não 'capture-with-system': capturar janela ou tela no Windows traz o
-// mix inteiro do sistema junto, então o vazamento só acontece se o participante pedir.
+// 'capture' e não 'capture-with-system': só a tela inteira traz o mix do sistema
+// junto, e mesmo ela só se o participante pedir. Janela e aba ficam isoladas.
 export function storedAudioSource(): AudioSource {
   return storedChoice(AUDIO_SOURCE_STORAGE_KEY, AUDIO_SOURCES, 'capture');
 }
