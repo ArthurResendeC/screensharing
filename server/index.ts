@@ -4,6 +4,7 @@ import icon512 from '../src/client/assets/icon-512.png' with { type: 'file' };
 import maskableIcon512 from '../src/client/assets/icon-maskable-512.png' with { type: 'file' };
 import manifest from '../src/client/manifest.webmanifest' with { type: 'text' };
 import serviceWorker from '../src/client/service-worker.js' with { type: 'text' };
+import { createClientErrorLogger } from './clientErrors';
 import { createRealtimeProxy } from './realtime/proxy';
 import { SignalingHub, type Client, type SignalingSocket } from './signaling';
 
@@ -91,6 +92,10 @@ function tokenRequestAllowed(request: Request) {
 
 const forbidden = () => new Response('Origin not allowed\n', { status: 403 });
 
+const logClientError = createClientErrorLogger({
+  deployment: process.env.RAILWAY_DEPLOYMENT_ID,
+});
+
 const server = Bun.serve<Client>({
   hostname: '0.0.0.0',
   port,
@@ -125,6 +130,12 @@ const server = Bun.serve<Client>({
         'cache-control': 'no-store',
       },
     }),
+    // Relatos de erro do navegador (src/client/errorReporting.ts) para o log do deploy.
+    // sendBeacon é um POST same-origin e sempre manda Origin.
+    '/client-errors': {
+      POST: (request: Request) =>
+        originAllowed(request) ? logClientError(request) : forbidden(),
+    },
     '/config.json': () =>
       Response.json(
         {

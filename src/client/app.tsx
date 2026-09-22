@@ -1,4 +1,6 @@
-import { Fragment, useEffect, useState } from 'react';
+// Primeiro de propósito: instala os listeners de erro antes de avaliar o resto.
+import { reportClientError } from './errorReporting';
+import { Fragment, useEffect, useState, type ErrorInfo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { z } from 'zod';
 import {
@@ -12,6 +14,7 @@ import { createRoom } from '../lib/signaling/client';
 import { configureRtc } from '../lib/webrtc/rtcConfiguration';
 import { configureMedia } from './media/config';
 import { Room } from './room';
+import { ErrorBoundary } from './components/errorBoundary';
 import { RoomPasswordGate } from './components/roomModals';
 import { EyeIcon } from './components/icons';
 import {
@@ -378,6 +381,15 @@ async function registerServiceWorker() {
   }
 }
 
+// Substituir os callbacks do React desliga o log padrão dele, então o console.error
+// volta aqui.
+function reportRenderError(error: unknown, info: ErrorInfo) {
+  console.error(error);
+  reportClientError('render', error, {
+    componentStack: info.componentStack ?? undefined,
+  });
+}
+
 async function bootstrap() {
   applyTheme(loadTheme());
   try {
@@ -401,7 +413,20 @@ async function bootstrap() {
 
   const root = document.querySelector<HTMLElement>('#app');
   if (!root) throw new Error('Contêiner da aplicação ausente.');
-  createRoot(root).render(<App />);
+  createRoot(root, {
+    onCaughtError: reportRenderError,
+    onUncaughtError: reportRenderError,
+    onRecoverableError: (error, info) => {
+      console.error(error);
+      reportClientError('react-recoverable', error, {
+        componentStack: info.componentStack,
+      });
+    },
+  }).render(
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>,
+  );
   void registerServiceWorker();
 }
 

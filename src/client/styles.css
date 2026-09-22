@@ -86,6 +86,31 @@ code,
   font-size: 13px;
 }
 
+/* Tela do ErrorBoundary: fica no lugar da página em branco. */
+.crash-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  width: min(calc(100% - 32px), 560px);
+  margin: 12vh auto 0;
+}
+.crash-screen h1 {
+  margin: 0;
+  font-size: 22px;
+}
+.crash-screen p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.crash-screen pre {
+  width: 100%;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;
