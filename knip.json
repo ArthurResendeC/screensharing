@@ -5,6 +5,7 @@
     "src/client/app.tsx",
     "src/client/service-worker.js",
     ".railway/railway.ts",
+    ".cloudflare/*.test.ts",
     "tests/**/*.test.ts",
     "tests/e2e/*.spec.ts",
     "tests/e2e/*.setup.ts"
@@ -14,6 +15,7 @@
     "src/**/*.{ts,tsx}",
     "scripts/**/*.ts",
     ".railway/**/*.ts",
+    ".cloudflare/**/*.ts",
     "tests/**/*.ts"
   ]
 }
