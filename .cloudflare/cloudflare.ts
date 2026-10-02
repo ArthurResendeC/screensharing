@@ -8,15 +8,17 @@
  * rules in the same phases are sent back unchanged.
  *
  * Auth: `CLOUDFLARE_API_TOKEN`, with Zone: Read, Bot Management: Read, and Edit on Zone Settings,
- * Config Rules and Zone WAF, on the zone.
+ * Config Rules, Transform Rules and Zone WAF, on the zone. `ORIGIN_AUTH_SECRET` must hold the same
+ * value as the Railway service's variable: `plan` compares the header Cloudflare sends against it.
  */
 import process from 'node:process';
 
 import {
   BOT_MANAGEMENT,
   MANAGED_PREFIX,
+  ORIGIN_AUTH_SECRET_MIN_LENGTH,
   type Rule,
-  RULESETS,
+  rulesets,
   SETTINGS,
   ZONE,
 } from './rules.ts';
@@ -35,6 +37,7 @@ const REQUIRED_PERMISSIONS: Array<[RegExp, string]> = [
   [/\/phases\/http_config_settings\//u, 'Config Rules'],
   [/\/phases\/http_request_firewall_custom\//u, 'Zone WAF'],
   [/\/phases\/http_ratelimit\//u, 'Zone WAF'],
+  [/\/phases\/http_request_late_transform\//u, 'Transform Rules'],
   [/^\/zones\?/u, 'Zone'],
 ];
 
@@ -239,7 +242,24 @@ function withoutReadOnlyFields(rule: unknown): unknown {
     : rule;
 }
 
-async function syncZone(zone: string, apply: boolean): Promise<boolean> {
+/** The secret Cloudflare sends to the origin (`ORIGIN_AUTH_HEADER` in rules.ts). */
+function originAuthSecret(): string {
+  const secret = process.env.ORIGIN_AUTH_SECRET ?? '';
+
+  if (secret.length < ORIGIN_AUTH_SECRET_MIN_LENGTH) {
+    throw new Error(
+      `Set ORIGIN_AUTH_SECRET to the Railway service's value (at least ${ORIGIN_AUTH_SECRET_MIN_LENGTH} characters).`,
+    );
+  }
+
+  return secret;
+}
+
+async function syncZone(
+  zone: string,
+  desiredRulesets: Record<string, Rule[]>,
+  apply: boolean,
+): Promise<boolean> {
   let changed = false;
 
   console.log(`\n${ZONE} (${zone})`);
@@ -262,7 +282,7 @@ async function syncZone(zone: string, apply: boolean): Promise<boolean> {
     }
   }
 
-  for (const [phase, desired] of Object.entries(RULESETS)) {
+  for (const [phase, desired] of Object.entries(desiredRulesets)) {
     const live = await liveRules(zone, phase);
     const managed = live.filter(rule => isManaged(rule));
     const others = live.filter(rule => !isManaged(rule));
@@ -290,8 +310,9 @@ async function main(): Promise<void> {
     throw new Error('Usage: bun .cloudflare/cloudflare.ts <plan|apply>');
   }
 
+  const desiredRulesets = rulesets(originAuthSecret());
   const zone = await zoneId(ZONE);
-  const changed = await syncZone(zone, command === 'apply');
+  const changed = await syncZone(zone, desiredRulesets, command === 'apply');
   const botManagementOk = await checkBotManagement(zone);
 
   if (!changed) {

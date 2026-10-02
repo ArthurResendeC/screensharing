@@ -18,11 +18,12 @@ import {
   PLAN_LIMITS,
   RATE_LIMITED_PATHS,
   ROOM_PREFIX,
-  RULESETS,
+  rulesets,
   SERVED_PATHS,
   VERIFIED_CRAWLER_NAMES,
   WRITE_PATHS,
 } from './rules.ts';
+import { ORIGIN_AUTH_HEADER } from '../server/originAuth.ts';
 import {
   ASSET_PATHS,
   SCANNER_PATHS,
@@ -32,6 +33,9 @@ import {
 
 // Cloudflare's limit on a rule expression's length.
 const MAX_EXPRESSION_LENGTH = 4096;
+
+const ORIGIN_AUTH_SECRET = 'origin-auth-secret-with-at-least-32-characters';
+const RULESETS = rulesets(ORIGIN_AUTH_SECRET);
 
 function extension(path: string): string {
   const lastSegment = path.slice(path.lastIndexOf('/') + 1);
@@ -225,5 +229,20 @@ describe('rulesets', () => {
 
   test.each(RATE_LIMITED_PATHS)('rate limit the server route %s', path => {
     expect(SERVER_ROUTES).toContain(path);
+  });
+});
+
+describe('origin auth rule', () => {
+  // The header the server checks, with the secret, on every request to the host.
+  test('set the header the server checks to the secret', () => {
+    const [originAuth] = RULESETS.http_request_late_transform ?? [];
+
+    expect(originAuth?.action).toBe('rewrite');
+    expect(originAuth?.expression).toBe(`http.host eq "${HOST}"`);
+    expect(originAuth?.action_parameters).toEqual({
+      headers: {
+        [ORIGIN_AUTH_HEADER]: { operation: 'set', value: ORIGIN_AUTH_SECRET },
+      },
+    });
   });
 });

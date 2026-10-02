@@ -5,6 +5,7 @@ import maskableIcon512 from '../src/client/assets/icon-maskable-512.png' with { 
 import manifest from '../src/client/manifest.webmanifest' with { type: 'text' };
 import serviceWorker from '../src/client/service-worker.js' with { type: 'text' };
 import { createClientErrorLogger } from './clientErrors';
+import { createOriginAuth } from './originAuth';
 import { createRealtimeProxy } from './realtime/proxy';
 import { SignalingHub, type Client, type SignalingSocket } from './signaling';
 
@@ -48,6 +49,17 @@ if (
   throw new Error('ROOM_TOKEN_SECRET deve ter pelo menos 32 caracteres.');
 const roomTokenSecret =
   configuredRoomTokenSecret || 'development-only-room-token-secret-change-me';
+
+// Segredo que a Cloudflare manda em toda requisição (server/originAuth.ts). Ausente,
+// nada é exigido; defina-o só depois de `bun run cf:apply` com o mesmo valor.
+const originAuthSecret = process.env.ORIGIN_AUTH_SECRET ?? '';
+if (originAuthSecret && originAuthSecret.length < 32)
+  throw new Error('ORIGIN_AUTH_SECRET deve ter pelo menos 32 caracteres.');
+if (process.env.NODE_ENV === 'production' && !originAuthSecret)
+  console.warn(
+    'ORIGIN_AUTH_SECRET ausente: requisições direto na Railway, sem a Cloudflare, são aceitas.',
+  );
+const viaCloudflare = createOriginAuth(originAuthSecret);
 const hub = new SignalingHub(roomTokenSecret, maxRoomParticipants);
 const iconHeaders = { 'cache-control': 'public, max-age=604800' };
 
@@ -92,6 +104,20 @@ function tokenRequestAllowed(request: Request) {
 
 const forbidden = () => new Response('Origin not allowed\n', { status: 403 });
 
+// Bun responde as rotas estáticas (HTML, bundle, ícones, /health) antes de qualquer
+// código nosso, então a checagem fica nas rotas dinâmicas e no fallback: são elas que
+// o WAF e o rate limit da Cloudflare protegem. /health continua aberto para o
+// healthcheck da Railway, que chama o container direto.
+const directAccess = () =>
+  new Response('Direct origin access not allowed\n', { status: 403 });
+
+function onlyViaCloudflare<T extends Request>(
+  handler: (request: T) => Response | Promise<Response>,
+) {
+  return (request: T) =>
+    viaCloudflare(request) ? handler(request) : directAccess();
+}
+
 const logClientError = createClientErrorLogger({
   deployment: process.env.RAILWAY_DEPLOYMENT_ID,
 });
@@ -133,10 +159,11 @@ const server = Bun.serve<Client>({
     // Relatos de erro do navegador (src/client/errorReporting.ts) para o log do deploy.
     // sendBeacon é um POST same-origin e sempre manda Origin.
     '/client-errors': {
-      POST: (request: Request) =>
+      POST: onlyViaCloudflare((request: Request) =>
         originAllowed(request) ? logClientError(request) : forbidden(),
+      ),
     },
-    '/config.json': () =>
+    '/config.json': onlyViaCloudflare(() =>
       Response.json(
         {
           mediaProvider,
@@ -151,20 +178,26 @@ const server = Bun.serve<Client>({
         },
         { headers: { 'cache-control': 'no-store' } },
       ),
+    ),
     ...(realtimeProxy
       ? {
-          '/realtime/session': (request: Request) =>
+          '/realtime/session': onlyViaCloudflare((request: Request) =>
             tokenRequestAllowed(request) ? realtimeProxy(request) : forbidden(),
-          '/realtime/tracks/new': (request: Request) =>
+          ),
+          '/realtime/tracks/new': onlyViaCloudflare((request: Request) =>
             tokenRequestAllowed(request) ? realtimeProxy(request) : forbidden(),
-          '/realtime/renegotiate': (request: Request) =>
+          ),
+          '/realtime/renegotiate': onlyViaCloudflare((request: Request) =>
             tokenRequestAllowed(request) ? realtimeProxy(request) : forbidden(),
-          '/realtime/tracks/close': (request: Request) =>
+          ),
+          '/realtime/tracks/close': onlyViaCloudflare((request: Request) =>
             tokenRequestAllowed(request) ? realtimeProxy(request) : forbidden(),
+          ),
         }
       : {}),
   },
   fetch(request, bunServer) {
+    if (!viaCloudflare(request)) return directAccess();
     const url = new URL(request.url);
     if (url.pathname !== '/signaling')
       return new Response('Not found\n', { status: 404 });
