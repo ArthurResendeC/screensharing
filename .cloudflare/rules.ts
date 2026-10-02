@@ -7,6 +7,7 @@
  * The zone holds other hostnames, so every rule is scoped to `HOST` and zone-wide settings are
  * limited to ones that can't break another site.
  */
+import { ORIGIN_AUTH_HEADER } from '../server/originAuth.ts';
 
 export const ZONE = 'arthur-resende.com.br';
 export const HOST = 'reshare.arthur-resende.com.br';
@@ -97,6 +98,18 @@ export const VERIFIED_CRAWLER_NAMES = [
   'DuckAssistBot',
 ];
 
+// --- Origin auth --------------------------------------------------------------------------------
+
+/**
+ * Railway's edge serves `HOST` to anyone who connects to its IP directly, skipping every rule
+ * here (scanners find the name in certificate transparency logs). Cloudflare sets this header,
+ * with a secret, on every request to `HOST`, overwriting one a client sends, and the server
+ * (`server/originAuth.ts`) refuses its dynamic routes without it. The secret isn't in the repo:
+ * `cloudflare.ts` reads it from `ORIGIN_AUTH_SECRET`, the same variable the Railway service has.
+ * The server requires at least this length; `cloudflare.ts` checks it before sending.
+ */
+export const ORIGIN_AUTH_SECRET_MIN_LENGTH = 32;
+
 // --- Rate limit ----------------------------------------------------------------------------------
 
 /**
@@ -171,58 +184,77 @@ export interface Rule {
   ratelimit?: Record<string, unknown>;
 }
 
-/** The rules `apply` owns in each phase; other rules in the phase are kept. */
-export const RULESETS: Record<string, Rule[]> = {
-  http_config_settings: [
-    {
-      action: 'set_config',
-      // Railway needs Full for proxied domains ("Full (Strict) will not work"). Browser Integrity
-      // Check blocks requests whose headers no browser sends (a missing or abuse-tool user agent).
-      action_parameters: { bic: true, ssl: 'full' },
-      description: `${MANAGED_PREFIX}Full SSL to Railway and Browser Integrity Check`,
-      enabled: true,
-      expression: onHost,
-    },
-  ],
-  http_request_firewall_custom: [
-    {
-      action: 'block',
-      description: `${MANAGED_PREFIX}Block paths the server doesn't serve`,
-      enabled: true,
-      expression: `${onHost} and not ${servedPath}`,
-    },
-    {
-      action: 'block',
-      description: `${MANAGED_PREFIX}Block methods the server doesn't handle on the path`,
-      enabled: true,
-      expression: `${onHost} and not http.request.method in {"GET" "HEAD"} and not (${writeAllowed})`,
-    },
-    {
-      action: 'block',
-      description: `${MANAGED_PREFIX}Block requests that call themselves a crawler but aren't verified`,
-      enabled: true,
-      expression: `${onHost} and not cf.client.bot and (${fakeCrawler})`,
-    },
-  ],
-  http_ratelimit: [
-    {
-      action: 'block',
-      description: `${MANAGED_PREFIX}Rate limit: more than ${RATE_LIMIT_REQUESTS} requests in ${RATE_LIMIT_PERIOD_SECONDS} seconds from one IP to ReShare's endpoints`,
-      enabled: true,
-      expression: `${PATH} in ${set(RATE_LIMITED_PATHS)}`,
-      ratelimit: {
-        characteristics: ['cf.colo.id', 'ip.src'],
-        mitigation_timeout: RATE_LIMIT_PERIOD_SECONDS,
-        period: RATE_LIMIT_PERIOD_SECONDS,
-        requests_per_period: RATE_LIMIT_REQUESTS,
+/**
+ * The rules `apply` owns in each phase; other rules in the phase are kept. Takes the origin auth
+ * secret so it never sits in the repo.
+ */
+export function rulesets(originAuthSecret: string): Record<string, Rule[]> {
+  return {
+    http_config_settings: [
+      {
+        action: 'set_config',
+        // Railway needs Full for proxied domains ("Full (Strict) will not work"). Browser Integrity
+        // Check blocks requests whose headers no browser sends (a missing or abuse-tool user agent).
+        action_parameters: { bic: true, ssl: 'full' },
+        description: `${MANAGED_PREFIX}Full SSL to Railway and Browser Integrity Check`,
+        enabled: true,
+        expression: onHost,
       },
-    },
-  ],
-};
+    ],
+    http_request_firewall_custom: [
+      {
+        action: 'block',
+        description: `${MANAGED_PREFIX}Block paths the server doesn't serve`,
+        enabled: true,
+        expression: `${onHost} and not ${servedPath}`,
+      },
+      {
+        action: 'block',
+        description: `${MANAGED_PREFIX}Block methods the server doesn't handle on the path`,
+        enabled: true,
+        expression: `${onHost} and not http.request.method in {"GET" "HEAD"} and not (${writeAllowed})`,
+      },
+      {
+        action: 'block',
+        description: `${MANAGED_PREFIX}Block requests that call themselves a crawler but aren't verified`,
+        enabled: true,
+        expression: `${onHost} and not cf.client.bot and (${fakeCrawler})`,
+      },
+    ],
+    http_ratelimit: [
+      {
+        action: 'block',
+        description: `${MANAGED_PREFIX}Rate limit: more than ${RATE_LIMIT_REQUESTS} requests in ${RATE_LIMIT_PERIOD_SECONDS} seconds from one IP to ReShare's endpoints`,
+        enabled: true,
+        expression: `${PATH} in ${set(RATE_LIMITED_PATHS)}`,
+        ratelimit: {
+          characteristics: ['cf.colo.id', 'ip.src'],
+          mitigation_timeout: RATE_LIMIT_PERIOD_SECONDS,
+          period: RATE_LIMIT_PERIOD_SECONDS,
+          requests_per_period: RATE_LIMIT_REQUESTS,
+        },
+      },
+    ],
+    http_request_late_transform: [
+      {
+        action: 'rewrite',
+        action_parameters: {
+          headers: {
+            [ORIGIN_AUTH_HEADER]: { operation: 'set', value: originAuthSecret },
+          },
+        },
+        description: `${MANAGED_PREFIX}Mark requests that went through Cloudflare for the origin`,
+        enabled: true,
+        expression: onHost,
+      },
+    ],
+  };
+}
 
 /** The Free plan's limits per zone (for all hostnames together), checked by the tests. */
 export const PLAN_LIMITS: Record<string, number> = {
   http_config_settings: 10,
   http_ratelimit: 1,
+  http_request_late_transform: 10,
   http_request_firewall_custom: 5,
 };
