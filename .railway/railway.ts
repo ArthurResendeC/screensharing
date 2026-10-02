@@ -1,4 +1,4 @@
-import { defineRailway, project, service } from 'railway/iac';
+import { defineRailway, github, preserve, project, service } from 'railway/iac';
 
 export default defineRailway(ctx => {
   // Some CLI versions evaluate once without context before loading the linked project.
@@ -12,11 +12,13 @@ export default defineRailway(ctx => {
     );
   }
 
-  // No GitHub source: deployments are explicit via `railway up --service ...`.
-  // Railway-generated domains are created separately with `railway domain`.
-  // Keep platform defaults ON_FAILURE and Serverless off. CLI 5.44 serializes
-  // those defaults as null, so spelling them out causes a perpetual false diff.
-  const web = service('web', {
+  // The name must match the live service: a different one makes `railway config apply` delete
+  // ReShare and create an empty service. Deploys come from the GitHub repo; the custom domain
+  // (reshare.arthur-resende.com.br, behind Cloudflare) is managed separately with `railway domain`.
+  // Keep the platform default ON_FAILURE unset. CLI 5.44 serializes it as null, so spelling it out
+  // causes a perpetual false diff.
+  const reshare = service('ReShare', {
+    source: github('ArthurResendeC/screensharing'),
     build: { builder: 'RAILPACK', buildCommand: 'bun run build' },
     start: 'bun run start',
     healthcheck: '/health',
@@ -24,6 +26,8 @@ export default defineRailway(ctx => {
     replicas: 1,
     deploy: {
       restartPolicyMaxRetries: 3,
+      // Serverless: sleeps when idle and wakes on the next request.
+      sleepApplication: true,
     },
     env: {
       PORT: '3000',
@@ -32,10 +36,13 @@ export default defineRailway(ctx => {
       // Camada de mídia. Comece em 'webrtc'; troque para 'cloudflare' quando o
       // app Cloudflare Realtime estiver validado. Rollback = voltar e reiniciar.
       MEDIA_PROVIDER: 'webrtc',
+      // Segredos definidos fora da IaC (`railway variables set ... --service ReShare`);
+      // `preserve()` impede que o apply os apague. CLOUDFLARE_REALTIME_APP_ID e
+      // CLOUDFLARE_REALTIME_APP_SECRET seguem o mesmo caminho quando MEDIA_PROVIDER=cloudflare.
+      ROOM_TOKEN_SECRET: preserve(),
+      ORIGIN_AUTH_SECRET: preserve(),
     },
-    // CLOUDFLARE_REALTIME_APP_ID e CLOUDFLARE_REALTIME_APP_SECRET são segredos
-    // definidos fora da IaC: `railway variables set CLOUDFLARE_REALTIME_APP_SECRET=... --service ReShare`.
   });
 
-  return project('screensharing', { resources: [web] });
+  return project('screensharing', { resources: [reshare] });
 });
