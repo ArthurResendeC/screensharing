@@ -186,8 +186,8 @@ export class Peers {
       if (!parameters.encodings?.length) continue;
       if (kind === 'audio') {
         for (const encoding of parameters.encodings) {
-          // Desligar a codificação em vez de remover a track: a track publicada é
-          // sempre a mesma saída do mixer, então mudar de fonte nunca renegocia.
+          // Desligar a codificação em vez de remover a track: silenciar e voltar
+          // acontecem na mesma conexão, sem renegociar com o espectador.
           encoding.active = AUDIO_SENDING;
           encoding.maxBitrate =
             AUDIO_PROFILE_SETTINGS[AUDIO_PROFILE].maxAverageBitrate;
@@ -207,6 +207,30 @@ export class Peers {
               'O navegador não aplicou as preferências opcionais de codificação; a transmissão continua.',
             ),
           );
+      }
+    }
+  }
+  // Trocar de superfície troca só o que cada sender transmite: a negociação, o
+  // sessionId e a conexão de cada espectador ficam como estão. Um tipo que a nova
+  // captura não traz vira silêncio (null); um que a original não negociou fica de
+  // fora, porque entrar com ele exigiria nova offer.
+  async replaceTracks(stream: MediaStream) {
+    for (const entry of this.peers.values()) {
+      if (entry.direction !== 'send') continue;
+      for (const transceiver of entry.pc.getTransceivers()) {
+        if (!this.current(entry)) break;
+        // O receiver guarda o tipo mesmo depois que o sender ficou sem track.
+        const kind =
+          transceiver.sender.track?.kind ?? transceiver.receiver?.track?.kind;
+        if (kind !== 'video' && kind !== 'audio') continue;
+        const track =
+          stream.getTracks().find(candidate => candidate.kind === kind) ?? null;
+        if (transceiver.sender.track === track) continue;
+        try {
+          await transceiver.sender.replaceTrack(track);
+        } catch (error) {
+          if (this.current(entry)) this.onError(error);
+        }
       }
     }
   }

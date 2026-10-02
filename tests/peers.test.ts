@@ -231,3 +231,58 @@ test('sets the preferred video codec before creating an offer', async () => {
     globalThis.RTCRtpSender = originalSender;
   }
 });
+
+test('switching the capture swaps only what each send peer carries', async () => {
+  type FakeTrack = { kind: string };
+  const replaced: Array<{ kind: string; track: FakeTrack | null }> = [];
+  class SwitchingConnection extends FakeConnection {
+    readonly transceivers = ['video', 'audio'].map(kind => {
+      const sender = {
+        track: { kind } as FakeTrack | null,
+        async replaceTrack(track: FakeTrack | null) {
+          replaced.push({ kind, track });
+          sender.track = track;
+        },
+      };
+      return { direction: 'sendrecv', sender, receiver: { track: { kind } } };
+    });
+    override getTransceivers() {
+      return this.transceivers;
+    }
+  }
+  const original = globalThis.RTCPeerConnection;
+  globalThis.RTCPeerConnection =
+    SwitchingConnection as unknown as typeof RTCPeerConnection;
+  try {
+    const peers = new Peers(
+      () => {},
+      () => {},
+      () => {},
+      error => {
+        throw error;
+      },
+    );
+    const peerId = crypto.randomUUID();
+    peers.select(peerId, crypto.randomUUID()); // A receive peer must stay untouched.
+    await peers.offer(peerId, crypto.randomUUID(), {
+      getTracks: () => [],
+    } as unknown as MediaStream);
+    const video = { kind: 'video' };
+    await peers.replaceTracks({
+      getTracks: () => [video],
+    } as unknown as MediaStream);
+    // The audio sender goes silent instead of disappearing, so it keeps its kind.
+    expect(replaced).toEqual([
+      { kind: 'video', track: video },
+      { kind: 'audio', track: null },
+    ]);
+    const audio = { kind: 'audio' };
+    await peers.replaceTracks({
+      getTracks: () => [video, audio],
+    } as unknown as MediaStream);
+    expect(replaced.slice(2)).toEqual([{ kind: 'audio', track: audio }]);
+    peers.closeAllPeers();
+  } finally {
+    globalThis.RTCPeerConnection = original;
+  }
+});

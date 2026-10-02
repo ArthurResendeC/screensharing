@@ -129,6 +129,7 @@ export class CloudflareMediaProvider implements MediaProvider {
     selectedIds: [],
     alias: storedAlias(),
     capturing: false,
+    switching: false,
     sharing: false,
     localStream: null,
     remoteStreams: [],
@@ -416,6 +417,99 @@ export class CloudflareMediaProvider implements MediaProvider {
     }
   }
 
+  // Outra superfície no lugar da atual sem republicar: os mids e os trackNames no
+  // SFU continuam os mesmos, então quem assiste nem precisa saber da troca.
+  async switchShare() {
+    const seq = this.sessionSeq;
+    const previous = this.localStream;
+    if (
+      !this.joined ||
+      !this.state.sharing ||
+      !previous ||
+      this.capturing ||
+      this.state.switching
+    )
+      return;
+    const stale = () =>
+      !this.isCurrent(seq) ||
+      !this.joined ||
+      !this.state.sharing ||
+      this.localStream !== previous;
+    this.update({ switching: true, error: '' });
+    let captured: MediaStream | null = null;
+    let audioTrack: MediaStreamTrack | null = null;
+    try {
+      try {
+        captured = await navigator.mediaDevices.getDisplayMedia(
+          displayMediaConstraints(
+            CAPTURE_PRESETS[this.state.captureQuality],
+            this.state.audioSource,
+          ),
+        );
+      } catch {
+        // Seletor cancelado: o que já estava no ar continua.
+        return;
+      }
+      if (stale()) return;
+      const screenTrack = captured.getVideoTracks()[0];
+      if (!screenTrack)
+        throw new Error('A captura não retornou uma track de vídeo.');
+      audioTrack = await this.captureAudio(captured);
+      if (stale()) return;
+      // Sem track de áudio publicada não há o que trocar, e publicar uma agora
+      // obrigaria cada espectador a assinar de novo.
+      if (audioTrack && !this.publication?.audioMid) {
+        audioTrack.stop();
+        audioTrack = null;
+        this.setError(
+          'Esta transmissão começou sem áudio; o som da nova captura entra ao compartilhar de novo.',
+        );
+      }
+      const next = new MediaStream(
+        audioTrack ? [screenTrack, audioTrack] : [screenTrack],
+      );
+      const replaced = await this.queue.run(async () => {
+        if (stale()) return false;
+        for (const tx of this.sendTransceivers) {
+          const kind = tx.sender.track?.kind ?? tx.receiver.track.kind;
+          await tx.sender.replaceTrack(
+            next.getTracks().find(track => track.kind === kind) ?? null,
+          );
+        }
+        return true;
+      });
+      if (!replaced || stale()) return;
+      screenTrack.contentHint = 'motion';
+      screenTrack.onended = () => this.stopSharing(true);
+      for (const track of [...previous.getTracks(), ...captured.getTracks()]) {
+        if (next.getTracks().includes(track)) continue;
+        track.onended = null;
+        track.stop();
+      }
+      captured = null;
+      audioTrack = null;
+      this.localStream = next;
+      this.update({
+        localStream: next,
+        audioLive: next.getAudioTracks().length > 0,
+      });
+      setAudioSending(this.state.audioLive && !this.state.audioMuted);
+      this.startCaptureInfo(next);
+      await this.applyEncodeParameters();
+    } catch (error) {
+      if (this.isCurrent(seq))
+        this.setError(
+          error instanceof Error
+            ? `Não foi possível trocar a tela: ${error.message}`
+            : 'Não foi possível trocar a tela.',
+        );
+    } finally {
+      audioTrack?.stop();
+      captured?.getTracks().forEach(track => track.stop());
+      if (this.isCurrent(seq)) this.update({ switching: false });
+    }
+  }
+
   private async publish(seq: number, captured: MediaStream) {
     const pc = this.pc;
     if (!this.isCurrent(seq) || !pc || !this.ticket) return;
@@ -583,6 +677,7 @@ export class CloudflareMediaProvider implements MediaProvider {
     this.update({
       sharing: false,
       capturing: false,
+      switching: false,
       captureInfo: '',
       localStream: null,
       audioLive: false,

@@ -109,11 +109,14 @@ async function instrument(context: BrowserContext) {
     };
   });
 }
-async function capture(page: Page, color: string, withAudio = true) {
+// Several colors stand for several surfaces: each picker call returns the next one.
+async function capture(page: Page, color: string | string[], withAudio = true) {
   await page.addInitScript(
-    ({ color, withAudio }) => {
+    ({ colors, withAudio }) => {
+      let calls = 0;
       navigator.mediaDevices.getDisplayMedia = async options => {
         Object.assign(window, { testDisplayOptions: options });
+        const color = colors[Math.min(calls++, colors.length - 1)]!;
         const canvas = document.createElement('canvas');
         canvas.width = 640;
         canvas.height = 360;
@@ -150,7 +153,7 @@ async function capture(page: Page, color: string, withAudio = true) {
         return stream;
       };
     },
-    { color, withAudio },
+    { colors: [color].flat(), withAudio },
   );
 }
 async function enterRoom(page: Page, name?: string) {
@@ -546,8 +549,8 @@ test('five participants: simultaneous publishing, reciprocal watching and two re
   });
   await cleared(a);
   await playing(b, 'red', 1);
+  // C was left on B's ended screen, so B sharing again reopens it on its own.
   await shareButton(b).click();
-  await choose(c, bName);
   await playing(c, 'blue', 0);
   await viewers[2]
     .getByRole('button', { name: 'Deixar de assistir', exact: true })
@@ -657,8 +660,8 @@ test('a single lost signaling socket reconnects on its own and resumes sharing a
       () => (window as unknown as TestWindow).testTrack.readyState,
     ),
   ).toBe('live');
-  // A stayed connected and saw B leave; once B is back, A re-picks it in one click.
-  await choose(a, bName);
+  // A stayed connected and saw B leave from the ended screen; once B is back and
+  // sharing again, A picks it up without a click.
   await playing(a, 'blue', 1);
 });
 
@@ -688,7 +691,7 @@ test('a pure publisher whose socket drops keeps publishing to its viewer after r
       () => (window as unknown as TestWindow).testTrack.readyState,
     ),
   ).toBe('live');
-  await choose(b, aName);
+  // B was left on the ended screen, so the re-announced screen reopens there.
   await playing(b, 'red', 1);
 });
 
@@ -810,6 +813,113 @@ test('the sharer silences the audio without disturbing the video or renegotiatin
   const silent = await inboundBytes(b, 'audio');
   await expect.poll(() => inboundBytes(b, 'audio')).toBeGreaterThan(silent);
   expect(await activeCounts(b)).toEqual(before);
+});
+
+test('the sharer switches surfaces while viewers stay on the same connection', async ({
+  page: a,
+  context,
+}) => {
+  await instrument(context);
+  await capture(a, ['#ff0000', '#0000ff']);
+  await a.goto('/');
+  await createProtectedRoom(a);
+  await enterRoom(a);
+  const aName = await identity(a);
+  const b = await context.newPage();
+  await capture(b, '#00ff00', false);
+  await b.goto(a.url());
+  await enterRoom(b);
+  await shareButton(a).click();
+  await choose(b, aName);
+  await playing(b, 'red', 1);
+  const before = await activeCounts(b);
+  const first = await a.evaluate(
+    () => (window as unknown as TestWindow).testTrack.id,
+  );
+
+  await a.locator('[data-switch-share]').click();
+
+  // The new surface reaches the viewer through the sender it already had: no new
+  // subscription, no ended screen, and the old capture is released.
+  await playing(b, 'blue', 1);
+  expect(await activeCounts(b)).toEqual(before);
+  await expect(b.getByText('Transmissão encerrada')).toHaveCount(0);
+  expect(
+    await a.evaluate(
+      first =>
+        (window as unknown as TestWindow).testTrack.id !== first &&
+        (window as unknown as TestWindow).testTrack.readyState === 'live',
+      first,
+    ),
+  ).toBe(true);
+  await expect(a.locator('[data-switch-share]')).toBeEnabled();
+});
+
+test('cancelling the picker while switching keeps the current surface on the air', async ({
+  page: a,
+  context,
+}) => {
+  await instrument(context);
+  await capture(a, '#ff0000');
+  await a.goto('/');
+  await createProtectedRoom(a);
+  await enterRoom(a);
+  const aName = await identity(a);
+  const b = await context.newPage();
+  await capture(b, '#0000ff', false);
+  await b.goto(a.url());
+  await enterRoom(b);
+  await shareButton(a).click();
+  await choose(b, aName);
+  await playing(b, 'red', 1);
+  const before = await activeCounts(b);
+
+  await a.evaluate(() => {
+    navigator.mediaDevices.getDisplayMedia = async () => {
+      throw new DOMException('Permission denied', 'NotAllowedError');
+    };
+  });
+  await a.locator('[data-switch-share]').click();
+
+  await expect(a.locator('[data-switch-share]')).toBeEnabled();
+  await expect(stopShareButton(a)).toBeEnabled();
+  await playing(b, 'red', 1);
+  expect(await activeCounts(b)).toEqual(before);
+});
+
+test('a viewer left on the ended screen starts watching again when the sharer comes back', async ({
+  page: a,
+  context,
+}) => {
+  await instrument(context);
+  await capture(a, '#ff0000');
+  await a.goto('/');
+  await createProtectedRoom(a);
+  await enterRoom(a);
+  const aName = await identity(a);
+  const b = await context.newPage();
+  await capture(b, '#0000ff', false);
+  await b.goto(a.url());
+  await enterRoom(b);
+  await shareButton(a).click();
+  await choose(b, aName);
+  await playing(b, 'red', 1);
+
+  await stopShareButton(a).click();
+  await expect(
+    b.getByText('Transmissão encerrada', { exact: true }),
+  ).toBeVisible();
+  await shareButton(a).click();
+  await playing(b, 'red', 1);
+
+  // Going back to the list is a choice: the next share waits for a click again.
+  await stopShareButton(a).click();
+  await b.getByRole('button', { name: 'Voltar para a lista' }).click();
+  await shareButton(a).click();
+  await expect(
+    b.getByRole('button', { name: `Assistir a ${aName}`, exact: true }),
+  ).toBeVisible();
+  await expect(remoteVideo(b)).toHaveCount(0);
 });
 
 test('the picker is asked to leave the system mix out unless the sharer asks for it', async ({
