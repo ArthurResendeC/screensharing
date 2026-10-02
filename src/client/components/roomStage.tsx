@@ -53,7 +53,7 @@ export function RoomStage({
       : 'Você encerrou o compartilhamento';
   const endedBody =
     state.endedReason === 'remote'
-      ? `${state.endedPeerId ? controller.nameOf(state.endedPeerId) : 'Participante'} parou de compartilhar a tela. Escolha outra transmissão na lista de participantes.`
+      ? `${state.endedPeerId ? controller.nameOf(state.endedPeerId) : 'Participante'} parou de compartilhar a tela. Se voltar a compartilhar, a transmissão abre aqui sozinha; ou escolha outra na lista de participantes.`
       : 'Sua tela não está mais sendo transmitida para a sala. Os outros participantes continuam conectados.';
 
   return (

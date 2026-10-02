@@ -549,8 +549,8 @@ test('five participants: simultaneous publishing, reciprocal watching and two re
   });
   await cleared(a);
   await playing(b, 'red', 1);
+  // C was left on B's ended screen, so B sharing again reopens it on its own.
   await shareButton(b).click();
-  await choose(c, bName);
   await playing(c, 'blue', 0);
   await viewers[2]
     .getByRole('button', { name: 'Deixar de assistir', exact: true })
@@ -660,8 +660,8 @@ test('a single lost signaling socket reconnects on its own and resumes sharing a
       () => (window as unknown as TestWindow).testTrack.readyState,
     ),
   ).toBe('live');
-  // A stayed connected and saw B leave; once B is back, A re-picks it in one click.
-  await choose(a, bName);
+  // A stayed connected and saw B leave from the ended screen; once B is back and
+  // sharing again, A picks it up without a click.
   await playing(a, 'blue', 1);
 });
 
@@ -691,7 +691,7 @@ test('a pure publisher whose socket drops keeps publishing to its viewer after r
       () => (window as unknown as TestWindow).testTrack.readyState,
     ),
   ).toBe('live');
-  await choose(b, aName);
+  // B was left on the ended screen, so the re-announced screen reopens there.
   await playing(b, 'red', 1);
 });
 
@@ -885,6 +885,41 @@ test('cancelling the picker while switching keeps the current surface on the air
   await expect(stopShareButton(a)).toBeEnabled();
   await playing(b, 'red', 1);
   expect(await activeCounts(b)).toEqual(before);
+});
+
+test('a viewer left on the ended screen starts watching again when the sharer comes back', async ({
+  page: a,
+  context,
+}) => {
+  await instrument(context);
+  await capture(a, '#ff0000');
+  await a.goto('/');
+  await createProtectedRoom(a);
+  await enterRoom(a);
+  const aName = await identity(a);
+  const b = await context.newPage();
+  await capture(b, '#0000ff', false);
+  await b.goto(a.url());
+  await enterRoom(b);
+  await shareButton(a).click();
+  await choose(b, aName);
+  await playing(b, 'red', 1);
+
+  await stopShareButton(a).click();
+  await expect(
+    b.getByText('Transmissão encerrada', { exact: true }),
+  ).toBeVisible();
+  await shareButton(a).click();
+  await playing(b, 'red', 1);
+
+  // Going back to the list is a choice: the next share waits for a click again.
+  await stopShareButton(a).click();
+  await b.getByRole('button', { name: 'Voltar para a lista' }).click();
+  await shareButton(a).click();
+  await expect(
+    b.getByRole('button', { name: `Assistir a ${aName}`, exact: true }),
+  ).toBeVisible();
+  await expect(remoteVideo(b)).toHaveCount(0);
 });
 
 test('the picker is asked to leave the system mix out unless the sharer asks for it', async ({

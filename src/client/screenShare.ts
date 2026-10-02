@@ -81,6 +81,9 @@ export class ScreenShareController implements MediaProvider {
   private localStream: MediaStream | null = null;
   private readonly watchTargets = new Map<string, string>();
   private resumeWatch = false;
+  // Nome de quem encerrou a transmissão que estava na tela: se ele recarregar a
+  // página volta com outro peerId, e o nome é o que ainda o identifica.
+  private endedName = '';
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private reconnectAttempts = 0;
   private disposed = false;
@@ -870,6 +873,7 @@ export class ScreenShareController implements MediaProvider {
       case 'room-state':
         this.updateMembers(session, message.peers);
         this.maybeResumeWatch(message.peers);
+        this.maybeWatchAgain(session, message.peers);
         break;
       case 'watching':
         if (message.peerId) break;
@@ -899,12 +903,14 @@ export class ScreenShareController implements MediaProvider {
             this.watchTargets.delete(peerId);
             endedSelection = true;
           }
-        if (endedSelection)
+        if (endedSelection) {
+          this.endedName = this.nameOf(message.peerId);
           this.update({
             selectedIds: [...session.selections.keys()],
             endedReason: session.selections.size ? null : 'remote',
             endedPeerId: message.peerId,
           });
+        }
         break;
       case 'error':
         this.update(
@@ -952,6 +958,32 @@ export class ScreenShareController implements MediaProvider {
       }
     }
     this.resumeWatch = session.selections.size < this.watchTargets.size;
+  }
+
+  // Enquanto a tela de "Transmissão encerrada" estiver aberta, quem a encerrou
+  // continua sendo o alvo: se voltar a compartilhar, a transmissão abre sozinha.
+  // Voltar para a lista, assistir a outro ou compartilhar a própria tela fecha essa
+  // tela e, com ela, a espera.
+  private maybeWatchAgain(session: Session, peers: Participant[]) {
+    const endedPeerId = this.state.endedPeerId;
+    if (
+      this.state.endedReason !== 'remote' ||
+      !endedPeerId ||
+      session.selections.size ||
+      !session.joined ||
+      session.disposed
+    )
+      return;
+    const available = peers.filter(
+      peer => peer.sharing && peer.peerId !== this.state.selfId,
+    );
+    const byName = available.filter(
+      peer => displayName(peer) === this.endedName,
+    );
+    const target =
+      available.find(peer => peer.peerId === endedPeerId) ??
+      (byName.length === 1 ? byName[0] : undefined);
+    if (target) this.watch(target.peerId);
   }
 
   dispose() {
