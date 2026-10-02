@@ -291,6 +291,18 @@ export function RoomStage({
           >
             <StopIcon /> Parar compartilhamento
           </button>
+          {state.sharing && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              data-switch-share
+              disabled={state.switching}
+              onClick={() => void controller.switchShare()}
+            >
+              <ScreenIcon size={16} />{' '}
+              {state.switching ? 'Selecionando tela…' : 'Trocar tela'}
+            </button>
+          )}
           <span className="conn-label">{connection}</span>
         </div>
         {state.localStream && (

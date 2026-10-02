@@ -31,6 +31,9 @@ export type ScreenShareState = {
   selectedIds: string[];
   alias: string;
   capturing: boolean;
+  // Escolhendo outra superfície com a transmissão no ar: os espectadores seguem
+  // conectados e só passam a receber a nova captura quando ela chega.
+  switching: boolean;
   sharing: boolean;
   localStream: MediaStream | null;
   remoteStreams: RemoteStream[];
@@ -78,6 +81,7 @@ export interface MediaProvider {
   share(): Promise<void>;
   stopSharing(notify?: boolean): void;
   toggleShare(): Promise<void>;
+  switchShare(): Promise<void>;
   watch(peerId: string, resuming?: boolean): void;
   setAlias(value: string): void;
   setTheme(theme: Theme): void;

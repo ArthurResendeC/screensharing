@@ -97,6 +97,7 @@ export class ScreenShareController implements MediaProvider {
     selectedIds: [],
     alias: storedAlias(),
     capturing: false,
+    switching: false,
     sharing: false,
     localStream: null,
     remoteStreams: [],
@@ -422,6 +423,87 @@ export class ScreenShareController implements MediaProvider {
     }
   }
 
+  // Outra superfície no lugar da atual, sem parar a transmissão: cada espectador
+  // segue na conexão que já tem e só passa a receber os novos frames.
+  async switchShare() {
+    const session = this.session;
+    const previous = session?.stream;
+    if (
+      !session?.joined ||
+      session.disposed ||
+      !previous ||
+      this.state.capturing ||
+      this.state.switching
+    )
+      return;
+    const capture = ++session.capture;
+    const stale = () =>
+      !this.isCurrent(session) ||
+      !session.joined ||
+      session.capture !== capture ||
+      session.stream !== previous;
+    this.update({ switching: true, error: '' });
+    let captured: MediaStream | null = null;
+    let audioTrack: MediaStreamTrack | null = null;
+    try {
+      try {
+        captured = await navigator.mediaDevices.getDisplayMedia(
+          displayMediaConstraints(
+            CAPTURE_PRESETS[this.state.captureQuality],
+            this.state.audioSource,
+          ),
+        );
+      } catch {
+        // Seletor cancelado: o que já estava no ar continua.
+        return;
+      }
+      if (stale()) return;
+      const videoTrack = captured.getVideoTracks()[0];
+      if (!videoTrack)
+        throw new Error('A captura não retornou uma track de vídeo.');
+      audioTrack = await this.captureAudio(captured);
+      if (stale()) return;
+      // Sem áudio no ar não há transceiver de áudio com quem entrou depois disso,
+      // e incluí-lo exigiria renegociar com cada espectador.
+      if (audioTrack && !previous.getAudioTracks().length) {
+        audioTrack.stop();
+        audioTrack = null;
+        this.setError(
+          'Esta transmissão começou sem áudio; o som da nova captura entra ao compartilhar de novo.',
+        );
+      }
+      const next = new MediaStream(
+        audioTrack ? [videoTrack, audioTrack] : [videoTrack],
+      );
+      await session.peers.replaceTracks(next);
+      if (stale()) {
+        // Parar a transmissão no meio da troca já fechou os peers de envio.
+        next.getTracks().forEach(track => track.stop());
+        return;
+      }
+      for (const track of [...previous.getTracks(), ...captured.getTracks()]) {
+        if (next.getTracks().includes(track)) continue;
+        track.onended = null;
+        track.stop();
+      }
+      captured = null;
+      audioTrack = null;
+      this.adoptStream(session, next);
+      await session.peers.reapplyEncodeParameters();
+    } catch (error) {
+      if (this.isCurrent(session) && session.capture === capture)
+        this.setError(
+          error instanceof Error
+            ? `Não foi possível trocar a tela: ${error.message}`
+            : 'Não foi possível trocar a tela.',
+        );
+    } finally {
+      audioTrack?.stop();
+      captured?.getTracks().forEach(track => track.stop());
+      if (this.isCurrent(session)) this.update({ switching: false });
+    }
+  }
+
   getPeers() {
     return this.session?.peers ?? null;
   }
@@ -466,7 +548,7 @@ export class ScreenShareController implements MediaProvider {
     session.stream = null;
     if (this.settingsTimer) clearInterval(this.settingsTimer);
     this.settingsTimer = undefined;
-    this.update({ sharing: false, captureInfo: '' });
+    this.update({ sharing: false, switching: false, captureInfo: '' });
   }
 
   private stopCapture() {
@@ -522,6 +604,19 @@ export class ScreenShareController implements MediaProvider {
   }
 
   private beginPublishing(session: Session, captured: MediaStream) {
+    this.activeCodecPreference ??= this.state.codecPreference;
+    session.codecPreference = this.activeCodecPreference;
+    this.adoptStream(session, captured);
+    try {
+      session.channel?.send({ type: 'sharing-started' });
+    } catch {
+      // Rejoining announces it again.
+    }
+  }
+
+  // Passa a tratar a captura como a que está no ar, sem anunciar nada: serve tanto
+  // para o começo da publicação quanto para a troca de superfície.
+  private adoptStream(session: Session, captured: MediaStream) {
     const screenTrack = captured.getVideoTracks()[0];
     if (!screenTrack)
       throw new Error('A captura não retornou uma track de vídeo.');
@@ -531,8 +626,6 @@ export class ScreenShareController implements MediaProvider {
     const live = captured.getAudioTracks().length > 0;
     this.update({ audioLive: live });
     setAudioSending(live && !this.state.audioMuted);
-    this.activeCodecPreference ??= this.state.codecPreference;
-    session.codecPreference = this.activeCodecPreference;
     screenTrack.onended = () => {
       if (this.session) this.stopSessionSharing(this.session, true);
       else this.stopCapture();
@@ -547,11 +640,6 @@ export class ScreenShareController implements MediaProvider {
     if (this.settingsTimer) clearInterval(this.settingsTimer);
     this.settingsTimer = setInterval(updateSettings, 2000);
     this.update({ localStream: captured, sharing: true });
-    try {
-      session.channel?.send({ type: 'sharing-started' });
-    } catch {
-      // Rejoining announces it again.
-    }
   }
 
   private disposeSession(session: Session) {

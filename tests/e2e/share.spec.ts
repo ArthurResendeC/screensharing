@@ -109,11 +109,14 @@ async function instrument(context: BrowserContext) {
     };
   });
 }
-async function capture(page: Page, color: string, withAudio = true) {
+// Several colors stand for several surfaces: each picker call returns the next one.
+async function capture(page: Page, color: string | string[], withAudio = true) {
   await page.addInitScript(
-    ({ color, withAudio }) => {
+    ({ colors, withAudio }) => {
+      let calls = 0;
       navigator.mediaDevices.getDisplayMedia = async options => {
         Object.assign(window, { testDisplayOptions: options });
+        const color = colors[Math.min(calls++, colors.length - 1)]!;
         const canvas = document.createElement('canvas');
         canvas.width = 640;
         canvas.height = 360;
@@ -150,7 +153,7 @@ async function capture(page: Page, color: string, withAudio = true) {
         return stream;
       };
     },
-    { color, withAudio },
+    { colors: [color].flat(), withAudio },
   );
 }
 async function enterRoom(page: Page, name?: string) {
@@ -809,6 +812,78 @@ test('the sharer silences the audio without disturbing the video or renegotiatin
   await a.getByRole('button', { name: 'Ligado', exact: true }).click();
   const silent = await inboundBytes(b, 'audio');
   await expect.poll(() => inboundBytes(b, 'audio')).toBeGreaterThan(silent);
+  expect(await activeCounts(b)).toEqual(before);
+});
+
+test('the sharer switches surfaces while viewers stay on the same connection', async ({
+  page: a,
+  context,
+}) => {
+  await instrument(context);
+  await capture(a, ['#ff0000', '#0000ff']);
+  await a.goto('/');
+  await createProtectedRoom(a);
+  await enterRoom(a);
+  const aName = await identity(a);
+  const b = await context.newPage();
+  await capture(b, '#00ff00', false);
+  await b.goto(a.url());
+  await enterRoom(b);
+  await shareButton(a).click();
+  await choose(b, aName);
+  await playing(b, 'red', 1);
+  const before = await activeCounts(b);
+  const first = await a.evaluate(
+    () => (window as unknown as TestWindow).testTrack.id,
+  );
+
+  await a.locator('[data-switch-share]').click();
+
+  // The new surface reaches the viewer through the sender it already had: no new
+  // subscription, no ended screen, and the old capture is released.
+  await playing(b, 'blue', 1);
+  expect(await activeCounts(b)).toEqual(before);
+  await expect(b.getByText('Transmissão encerrada')).toHaveCount(0);
+  expect(
+    await a.evaluate(
+      first =>
+        (window as unknown as TestWindow).testTrack.id !== first &&
+        (window as unknown as TestWindow).testTrack.readyState === 'live',
+      first,
+    ),
+  ).toBe(true);
+  await expect(a.locator('[data-switch-share]')).toBeEnabled();
+});
+
+test('cancelling the picker while switching keeps the current surface on the air', async ({
+  page: a,
+  context,
+}) => {
+  await instrument(context);
+  await capture(a, '#ff0000');
+  await a.goto('/');
+  await createProtectedRoom(a);
+  await enterRoom(a);
+  const aName = await identity(a);
+  const b = await context.newPage();
+  await capture(b, '#0000ff', false);
+  await b.goto(a.url());
+  await enterRoom(b);
+  await shareButton(a).click();
+  await choose(b, aName);
+  await playing(b, 'red', 1);
+  const before = await activeCounts(b);
+
+  await a.evaluate(() => {
+    navigator.mediaDevices.getDisplayMedia = async () => {
+      throw new DOMException('Permission denied', 'NotAllowedError');
+    };
+  });
+  await a.locator('[data-switch-share]').click();
+
+  await expect(a.locator('[data-switch-share]')).toBeEnabled();
+  await expect(stopShareButton(a)).toBeEnabled();
+  await playing(b, 'red', 1);
   expect(await activeCounts(b)).toEqual(before);
 });
 
